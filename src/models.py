@@ -18,7 +18,7 @@ from einops.layers.torch import Rearrange, Reduce
 
 
 class ResidLinear(nn.Module):
-    def __init__(self, n_in, n_out, activation=nn.Tanh):
+    def __init__(self, n_in, n_out, activation=nn.LeakyReLU):
         super(ResidLinear, self).__init__()
 
         self.linear = nn.Linear(n_in, n_out)
@@ -66,7 +66,7 @@ class RandomFourierEmbedding2d(nn.Module):
     
 
 class InferenceNetwork(nn.Module):
-    def __init__(self, n, latent_dim, hidden_dim, num_layers=1, activation=nn.Tanh, resid=False):
+    def __init__(self, n, latent_dim, hidden_dim, num_layers=1, activation=nn.LeakyReLU, resid=False):
         super(InferenceNetwork, self).__init__()
 
         self.latent_dim = latent_dim
@@ -98,7 +98,7 @@ class InferenceNetwork(nn.Module):
 
 
 class SpatialGenerator(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, n_out=1, num_layers=1, activation=nn.Tanh
+    def __init__(self, latent_dim, hidden_dim, n_out=1, num_layers=1, activation=nn.LeakyReLU
                 , softplus=False, resid=False, expand_coords=False, bilinear=False):
         super(SpatialGenerator, self).__init__()
 
@@ -179,7 +179,7 @@ class SpatialGenerator(nn.Module):
 
 
 class VanillaGenerator(nn.Module):
-    def __init__(self, n, latent_dim, hidden_dim, n_out=1, num_layers=1, activation=nn.Tanh
+    def __init__(self, n, latent_dim, hidden_dim, n_out=1, num_layers=1, activation=nn.LeakyReLU
                 , softplus=False, resid=False):
         super(VanillaGenerator, self).__init__()
         """
@@ -217,141 +217,11 @@ class VanillaGenerator(nn.Module):
 
 
 
-    
 
-class MNIST_ConvInferenceNetwork(nn.Module):
-    def __init__(self, n, latent_dim, activation=nn.Tanh, resid=False):
-        super(MNIST_ConvInferenceNetwork, self).__init__()
-
-        self.latent_dim = latent_dim
-        self.n = n
-        
-        self.activation = activation()
-        
-        self.conv1 = nn.Conv2d(1, 32, 5, padding=3)
-        
-        self.conv2 = nn.Conv2d(32, 64, 3)
-        
-        self.conv3 = nn.Conv2d(64, 128, 1)
-        
-        self.conv4 = nn.Conv2d(128, 2*latent_dim, 28)
-        
-        
-        
-
-    def forward(self, x):
-        #x = x.view(-1, 1, 28, 28)
-        
-        x = self.activation(self.conv1(x))
-        #print(x.shape)
-        
-        x = self.activation(self.conv2(x))
-        #print(x.shape)
-        
-        x = self.activation(self.conv3(x))
-        #print(x.shape)
-        
-        z = self.conv4(x)
-        #print(z.shape)
-        
-        ld = self.latent_dim
-        z = z.view(-1, 2*self.latent_dim)
-        
-        z_mu = z[:,:ld]
-        z_logstd = z[:,ld:]
-
-        return z_mu, z_logstd
-  
-
-    
-class Particles_ConvInferenceNetwork(nn.Module):
-    def __init__(self, n, latent_dim, activation=nn.Tanh, resid=False):
-        super(HDB_ConvInferenceNetwork, self).__init__()
-
-        self.latent_dim = latent_dim
-        self.n = n
-        
-        self.activation = activation()
-        
-        self.conv1 = nn.Conv2d(1, 32, 5, padding=3)
-        
-        self.conv2 = nn.Conv2d(32, 64, 3)
-        
-        self.conv3 = nn.Conv2d(64, 128, 1)
-        
-        self.conv4 = nn.Conv2d(128, 2*latent_dim, 40)
-       
-        
-
-    def forward(self, x):
-        #x = x.view(-1, 1, 40, 40)
-        
-        x = self.activation(self.conv1(x))
-        #print(x.shape)
-        
-        x = self.activation(self.conv2(x))
-        #print(x.shape)
-        
-        x = self.activation(self.conv3(x))
-        #print(x.shape)
-        
-        z = self.conv4(x)
-        #print(z.shape)
-        
-        ld = self.latent_dim
-        z = z.view(-1, 2*self.latent_dim)
-        
-        z_mu = z[:,:ld]
-        z_logstd = z[:,ld:]
-
-        return x, z_mu, z_logstd
-
-
-
-class MNIST_AttentionNetwork(nn.Module):
-    
-    def __init__(self, latent_dim=2, activation=nn.Tanh):
-        
-        super(MNIST_AttentionNetwork, self).__init__()
-        
-        self.activation = activation()
-        self.latent_dim = latent_dim
-        
-	self.conv1 = nn.Conv2d(1, 500, 28, padding=27)
-        self.conv2 = nn.Conv2d(500, 500, 1)
-
-        self.conv_a = nn.Conv2d(500, 1, 1)
-        self.conv_r = nn.Conv2d(500, 2, 1)
-        
-        self.conv_z = nn.Conv2d(500, 2*self.latent_dim, 1)
-        
-    
-    def forward(self, x):
-        x = x.view(-1, 1, 28, 28)
-        
-        x = self.activation(self.conv1(x))
-        h = self.activation(self.conv2(x))
-        
-        a = self.conv_a(h)
-        a = a.view(a.shape[0], -1)
-        
-        p = F.gumbel_softmax(a)
-        #p = F.softmax(a, dim=-1)
-        
-        z = self.conv_z(h)
-        
-        theta = self.conv_r(h)
-        
-        return p, theta, z
-
-    
-    
-    
-    
 class GroupConv(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, bias=True, input_stabilizer_size=1, output_stabilizer_size=4):
+                 padding=0, bias=True, input_rotation_size=1, output_rotation_size=4):
         super(GroupConv, self).__init__()
         self.ksize = kernel_size
 
@@ -364,11 +234,11 @@ class GroupConv(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
-        self.input_stabilizer_size = input_stabilizer_size
-        self.output_stabilizer_size = output_stabilizer_size
+        self.input_rotation_size = input_rotation_size
+        self.output_rotation_size = output_rotation_size
 
         self.weight = Parameter(torch.Tensor(
-            out_channels, in_channels, self.input_stabilizer_size, *kernel_size))
+            out_channels, in_channels, self.input_rotation_size, *kernel_size))
         if bias:
             self.bias = Parameter(torch.Tensor(out_channels))
         else:
@@ -390,16 +260,16 @@ class GroupConv(nn.Module):
     
     def trans_filter(self):
         
-        #rotate self.weight as much as output_stabilizer_size, each time by 2*pi/output_stabilizer_size,
+        #rotate self.weight as much as output_rotation_size, each time by 2*pi/output_rotation_size,
         #and then concatentate the values
         
-        res = torch.zeros(self.weight.shape[0], self.output_stabilizer_size, 
+        res = torch.zeros(self.weight.shape[0], self.output_rotation_size, 
                           self.weight.shape[1], self.weight.shape[2],
                           self.weight.shape[3], self.weight.shape[4]).cuda()
-        d_theta = 2*np.pi / self.output_stabilizer_size
+        d_theta = 2*np.pi / self.output_rotation_size
         theta = 0.0
         
-        for i in range(self.output_stabilizer_size):
+        for i in range(self.output_rotation_size):
             #create the rotation matrix
             rot = torch.zeros(self.weight.shape[0], 3, 4).cuda()
             rot[:,0,0] = np.cos(theta)
@@ -422,21 +292,21 @@ class GroupConv(nn.Module):
     def forward(self, input):
         tw = self.trans_filter()
         
-        tw_shape = (self.out_channels*self.output_stabilizer_size,
-                    self.in_channels*self.input_stabilizer_size,
+        tw_shape = (self.out_channels*self.output_rotation_size,
+                    self.in_channels*self.input_rotation_size,
                     self.ksize, self.ksize)
         
         tw = tw.view(tw_shape)
         
         input_shape = input.size()
-        input = input.view(input_shape[0], self.in_channels*self.input_stabilizer_size, input_shape[-2], 
+        input = input.view(input_shape[0], self.in_channels*self.input_rotation_size, input_shape[-2], 
                            input_shape[-1])
 
         y = F.conv2d(input, weight=tw, bias=None, stride=self.stride,
                         padding=self.padding)
         
         batch_size, _, ny_out, nx_out = y.size()
-        y = y.view(batch_size, self.out_channels, self.output_stabilizer_size, ny_out, nx_out)
+        y = y.view(batch_size, self.out_channels, self.output_rotation_size, ny_out, nx_out)
 
         if self.bias is not None:
             bias = self.bias.view(1, self.out_channels, 1, 1, 1)
@@ -446,32 +316,30 @@ class GroupConv(nn.Module):
     
 
 
-
     
-
+class InferenceNetwork_groupconv(nn.Module):
     
-
-    
-class MNIST_AttentionNetwork_groupconv(nn.Module):
-    
-    def __init__(self, latent_dim=2, activation=nn.LeakyReLU):
+    def __init__(self, latent_dim=2, activation=nn.LeakyReLU, kernels_number=128, input_size=28, input_rotation_size=1, output_rotation_size=4):
         
-        super(MNIST_AttentionNetwork_groupconv_myGroupConv_2, self).__init__()
+        super(InferenceNetwork_groupconv, self).__init__()
         
         self.activation = activation()
         self.latent_dim = latent_dim
+	self.input_size = input_size
+	self.output_rotation_size = output_rotation_size
         
-        self.conv1 = GroupConv(1, 128, 28, padding=27, input_stabilizer_size=1, output_stabilizer_size=4)
-        self.conv2 = nn.Conv3d(128, 128, 1)
+        self.conv1 = GroupConv(1, kernels_number, self.input_size, padding=self.input_size-1, input_rotation_size=input_rotation_size, 
+			       output_rotation_size=output_rotation_size)
+        self.conv2 = nn.Conv3d(kernels_number, kernels_number, 1)
         
-        self.conv_a = nn.Conv3d(128, 1, 1)
-        self.conv_r = nn.Conv3d(128, 2, 1)
-        self.conv_z = nn.Conv3d(128, 2*self.latent_dim, 1)
+        self.conv_a = nn.Conv3d(kernels_number, 1, 1)
+        self.conv_r = nn.Conv3d(kernels_number, 2, 1)
+        self.conv_z = nn.Conv3d(kernels_number, 2*self.latent_dim, 1)
         
         
         
     def forward(self, x, epoch):
-        x = x.view(-1, 1, 1, 28, 28)
+        x = x.view(-1, 1, 1, self.input_size, self.input_size)
         
         x = self.activation(self.conv1(x))
         h = self.activation(self.conv2(x))
@@ -485,15 +353,12 @@ class MNIST_AttentionNetwork_groupconv(nn.Module):
         
         
         # calculate rotation from group conv features
-        angles1 = torch.tensor([0, np.pi/2, np.pi, 3*np.pi/2]).type(torch.float).cuda()
-        angles2 = torch.ones_like(p) * angles1.unsqueeze(0).unsqueeze(2).unsqueeze(3)
-        theta_raw = self.conv_r(h) 
+        rotation_offset = torch.tensor(np.arange(0, 2*np.pi, 2*np.pi/self.output_rotation_size)).type(torch.float).cuda()
+        rotation_offset = torch.ones_like(p) * rotation_offset.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+        r_values = self.conv_r(h) 
         
-        #sgn = torch.sign(theta_raw[:,0, 2,:,:]).detach()
-        #angles2[:,2, : , :] = angles2[:,2, : , :] * sgn
-        
-        theta_mu = theta_raw[:,0,:,:,:] + angles2
-        theta_std = theta_raw[:, 1,:,:,:] 
+        theta_mu = r_values[:,0,:,:,:] + rotation_offset
+        theta_std = r_values[:, 1,:,:,:] 
         theta = torch.stack((theta_mu, theta_std), dim=1)
         
         z = self.conv_z(h)
@@ -503,48 +368,4 @@ class MNIST_AttentionNetwork_groupconv(nn.Module):
     
     
 
-class MNIST_AttentionNetwork_groupconv_myGroupConv_NoSampling(nn.Module):
-    
-    def __init__(self, latent_dim=2, activation=nn.LeakyReLU):
-        
-        super(MNIST_AttentionNetwork_groupconv_myGroupConv_NoSampling, self).__init__()
-        
-        self.activation = activation()
-        self.latent_dim = latent_dim
-        
-        self.conv1 = GroupConv(1, 128, 28, padding=27, input_stabilizer_size=1, output_stabilizer_size=4)
-        self.conv2 = GroupConv(128, 128, 1, input_stabilizer_size=4, output_stabilizer_size=4)
-        
-        
-        #self.rearrange = Rearrange('b c r h w -> b c r (h w)')
-        #self.avg_pooling = Reduce('b c r h w -> b c 1 h w', 'mean')
-        
-        self.conv_a = nn.Conv3d(128, 1, 1)
-        
-        self.conv_z = nn.Conv3d(128, 2*self.latent_dim, 1)
-        
-        
-    def forward(self, x):
-        x = x.view(-1, 1, 1, 28, 28)
-        
-        x = self.activation(self.conv1(x))
-        h = self.activation(self.conv2(x))
-        
-        # calculate attn_values for rotations at each patch
-        a = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
-        a = a.view(a.shape[0], -1)
-        p = F.gumbel_softmax(a, dim=-1)
-        #p = F.softmax(a , dim=-1)
-        p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4]).type(torch.float)
-        
-        # calculate rotation from group conv features
-        angles = torch.tensor(np.arange(0, 2*np.pi, np.pi/2)).type(torch.float).cuda()
-        angles = angles.expand(p.shape[0], angles.shape[0]).unsqueeze(2).unsqueeze(3)
-        angles = torch.zeros_like(p) + angles
-        
-        z = self.conv_z(h)
-        
-        return p, angles, z 
-    
-    
     
