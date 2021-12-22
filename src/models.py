@@ -65,36 +65,7 @@ class RandomFourierEmbedding2d(nn.Module):
     
     
 
-class InferenceNetwork(nn.Module):
-    def __init__(self, n, latent_dim, hidden_dim, num_layers=1, activation=nn.LeakyReLU, resid=False):
-        super(InferenceNetwork, self).__init__()
 
-        self.latent_dim = latent_dim
-        self.n = n
-
-        layers = [nn.Linear(n, hidden_dim),
-                  activation(),
-                 ]
-        for _ in range(1, num_layers):
-            if resid:
-                layers.append(ResidLinear(hidden_dim, hidden_dim, activation=activation))
-            else:
-                layers.append(nn.Linear(hidden_dim, hidden_dim))
-                layers.append(activation())
-
-        layers.append(nn.Linear(hidden_dim, 2*latent_dim))
-
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x):
-        # x is (batch,num_coords)
-        z = self.layers(x)
-
-        ld = self.latent_dim
-        z_mu = z[:,:ld]
-        z_logstd = z[:,ld:]
-
-        return z_mu, z_logstd
 
 
 class SpatialGenerator(nn.Module):
@@ -217,11 +188,15 @@ class VanillaGenerator(nn.Module):
 
 
 
-
+    
+    
+    
+    
+    
 class GroupConv(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, bias=True, input_rotation_size=1, output_rotation_size=4):
+                 padding=0, bias=True, input_rot_dim=1, output_rot_dim=4):
         super(GroupConv, self).__init__()
         self.ksize = kernel_size
 
@@ -234,11 +209,11 @@ class GroupConv(nn.Module):
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
-        self.input_rotation_size = input_rotation_size
-        self.output_rotation_size = output_rotation_size
+        self.input_rot_dim = input_rot_dim
+        self.output_rot_dim = output_rot_dim
 
         self.weight = Parameter(torch.Tensor(
-            out_channels, in_channels, self.input_rotation_size, *kernel_size))
+            out_channels, in_channels, self.input_rot_dim, *kernel_size))
         if bias:
             self.bias = Parameter(torch.Tensor(out_channels))
         else:
@@ -260,16 +235,16 @@ class GroupConv(nn.Module):
     
     def trans_filter(self):
         
-        #rotate self.weight as much as output_rotation_size, each time by 2*pi/output_rotation_size,
+        #rotate self.weight as much as output_rot_dim, each time by 2*pi/output_rot_dim,
         #and then concatentate the values
         
-        res = torch.zeros(self.weight.shape[0], self.output_rotation_size, 
+        res = torch.zeros(self.weight.shape[0], self.output_rot_dim, 
                           self.weight.shape[1], self.weight.shape[2],
                           self.weight.shape[3], self.weight.shape[4]).cuda()
-        d_theta = 2*np.pi / self.output_rotation_size
+        d_theta = 2*np.pi / self.output_rot_dim
         theta = 0.0
         
-        for i in range(self.output_rotation_size):
+        for i in range(self.output_rot_dim):
             #create the rotation matrix
             rot = torch.zeros(self.weight.shape[0], 3, 4).cuda()
             rot[:,0,0] = np.cos(theta)
@@ -292,21 +267,21 @@ class GroupConv(nn.Module):
     def forward(self, input):
         tw = self.trans_filter()
         
-        tw_shape = (self.out_channels*self.output_rotation_size,
-                    self.in_channels*self.input_rotation_size,
+        tw_shape = (self.out_channels*self.output_rot_dim,
+                    self.in_channels*self.input_rot_dim,
                     self.ksize, self.ksize)
         
         tw = tw.view(tw_shape)
         
         input_shape = input.size()
-        input = input.view(input_shape[0], self.in_channels*self.input_rotation_size, input_shape[-2], 
+        input = input.view(input_shape[0], self.in_channels*self.input_rot_dim, input_shape[-2], 
                            input_shape[-1])
 
         y = F.conv2d(input, weight=tw, bias=None, stride=self.stride,
                         padding=self.padding)
         
         batch_size, _, ny_out, nx_out = y.size()
-        y = y.view(batch_size, self.out_channels, self.output_rotation_size, ny_out, nx_out)
+        y = y.view(batch_size, self.out_channels, self.output_rot_dim, ny_out, nx_out)
 
         if self.bias is not None:
             bias = self.bias.view(1, self.out_channels, 1, 1, 1)
@@ -316,56 +291,185 @@ class GroupConv(nn.Module):
     
 
 
-    
-class InferenceNetwork_groupconv(nn.Module):
-    
-    def __init__(self, latent_dim=2, activation=nn.LeakyReLU, kernels_number=128, input_size=28, input_rotation_size=1, output_rotation_size=4):
-        
-        super(InferenceNetwork_groupconv, self).__init__()
-        
-        self.activation = activation()
+class InferenceNetwork_UnimodalTranslation_UnimodalRotation(nn.Module):
+    def __init__(self, n, latent_dim, hidden_dim, num_layers=1, activation=nn.LeakyReLU, resid=False):
+        super(InferenceNetwork_UnimodalTranslation_UnimodalRotation, self).__init__()
+
         self.latent_dim = latent_dim
-	self.input_size = input_size
-	self.output_rotation_size = output_rotation_size
+        self.n = n
+
+        layers = [nn.Linear(n, hidden_dim),
+                  activation(),
+                 ]
+        for _ in range(1, num_layers):
+            if resid:
+                layers.append(ResidLinear(hidden_dim, hidden_dim, activation=activation))
+            else:
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                layers.append(activation())
+
+        layers.append(nn.Linear(hidden_dim, 2*latent_dim))
+
+        self.layers = nn.Sequential(*layers)
+
+    def forward(self, x):
+        # x is (batch,num_coords)
+        z = self.layers(x)
+
+        ld = self.latent_dim
+        z_mu = z[:,:ld]
+        z_logstd = z[:,ld:]
+
+        return z_mu, z_logstd
+
+
+
+
+
+
+    
+class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
+    
+	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=groupconv):
         
-        self.conv1 = GroupConv(1, kernels_number, self.input_size, padding=self.input_size-1, input_rotation_size=input_rotation_size, 
-			       output_rotation_size=output_rotation_size)
-        self.conv2 = nn.Conv3d(kernels_number, kernels_number, 1)
+		super(InferenceNetwork_AttentionTranslation_UnimodalRotation, self).__init__()
         
-        self.conv_a = nn.Conv3d(kernels_number, 1, 1)
-        self.conv_r = nn.Conv3d(kernels_number, 2, 1)
-        self.conv_z = nn.Conv3d(kernels_number, 2*self.latent_dim, 1)
-        
-        
-        
-    def forward(self, x, epoch):
-        x = x.view(-1, 1, 1, self.input_size, self.input_size)
-        
-        x = self.activation(self.conv1(x))
-        h = self.activation(self.conv2(x))
-        
-        # calculate rotation from group conv features; attn_values for rotations at each patch; which rotation at each patch!
-        attn = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
-        a = attn.view(attn.shape[0], -1)
-        
-        p = F.gumbel_softmax(a, dim=-1, tau=0.1 )
-        p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4])
-        
-        
-        # calculate rotation from group conv features
-        rotation_offset = torch.tensor(np.arange(0, 2*np.pi, 2*np.pi/self.output_rotation_size)).type(torch.float).cuda()
-        rotation_offset = torch.ones_like(p) * rotation_offset.unsqueeze(0).unsqueeze(2).unsqueeze(3)
-        r_values = self.conv_r(h) 
-        
-        theta_mu = r_values[:,0,:,:,:] + rotation_offset
-        theta_std = r_values[:, 1,:,:,:] 
-        theta = torch.stack((theta_mu, theta_std), dim=1)
-        
-        z = self.conv_z(h)
+		self.activation = activation()
+		self.latent_dim = latent_dim
+		self.input_size = n
+		self.kernels_num = kernels_num
+		self.translaion_inference = translaion_inference
+		self.rotation_inference = rotation_inference
+		self.groupconv = groupconv
+		
+		if self.groupconv == 0:
+			self.conv1 = nn.Conv2d(1, self.kernels_num, self.input_size, padding=self.input_size-1)
+			self.conv2 = nn.Conv2d(self.kernels_num, self.kernels_num, 1)
+		else:
+			self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
+			self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
+			self.avg_pooling_layer = Reduce('b c r h w -> b c 1 h w', 'mean')
+
+		self.conv_a = nn.Conv2d(self.kernels_num, 1, 1)
+		self.conv_r = nn.Conv2d(self.kernels_num, 2, 1)
+		self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
         
         
-        return attn, p, theta, z     
+	def forward(self, x, epoch):
+		x = x.view(-1, 1, self.input_size, self.input_size)
+        
+		x = self.activation(self.conv1(x))
+		h = self.activation(self.conv2(x))
+		
+		if self.groupconv > 0:
+			h = self.avg_pooling_layer(h).squeeze(2)
+
+		attn = self.conv_a(h)
+		a = attn.view(attn.shape[0], -1)
+		p = F.gumbel_softmax(a, dim=-1)
+		p = p.view(h.shape[0], h.shape[2], h.shape[3])
+
+		z = self.conv_z(h)
+
+		theta = self.conv_r(h)
+
+		return attn, p, theta, z
+
+
+
+
+
+class InferenceNetwork_AttentionTranslation_UnimodalRotation_GroupConv(nn.Module):
+    
+	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, translation_inference='unimodal', rotation_inference='unimodal', groupconv=0):
+        
+		super(InferenceNetwork_AttentionTranslation_UnimodalRotation_GroupConv, self).__init__()
+        
+		self.activation = activation()
+		self.latent_dim = latent_dim
+		self.input_size = n
+		self.kernels_num = kernels_num
+		self.translaion_inference = translaion_inference
+		self.rotation_inference = rotation_inference
+		self.groupconv = groupconv
+
+		self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
+		self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
+		self.conv_a = nn.Conv3d(self.kernels_num, 1, 1)
+		self.avg_pooling_layer = Reduce('b c r h w -> b c 1 h w', 'mean')
+		self.conv_r = nn.Conv2d(self.kernels_num, 2, 1)
+		self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
+        	
+
+        
+        
+	def forward(self, x, epoch):
+		x = x.view(-1, 1, self.input_size, self.input_size)
+        
+		x = self.activation(self.conv1(x))
+		h = self.activation(self.conv2(x))
+		
+		h = self.avg_pooling_layer(h).squeeze(2)		
+
+		# calculate rotation from group conv features; attn_values for rotations at each patch
+		attn = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
+		a = attn.view(attn.shape[0], -1)
+		p = F.gumbel_softmax(a, dim=-1)
+		p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4])
+		
+		
+
+		z = self.conv_z(h)
+
+		theta = self.conv_r(h)
+
+		return attn, p, theta, z
+
+
+
+'''
+		x = x.view(-1, 1, 1, self.input_size, self.input_size)
+
+		x = self.activation(self.conv1(x))
+		h = self.activation(self.conv2(x))
+
+		# calculate rotation from group conv features; attn_values for rotations at each patch; which rotation at each patch!
+		attn = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
+		a = attn.view(attn.shape[0], -1)
+
+		p = F.gumbel_softmax(a, dim=-1, tau=0.1 )
+		p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4])
+
+
+		# calculate rotation from group conv features
+		rotation_offset = torch.tensor(np.arange(0, 2*np.pi, 2*np.pi/self.output_rot_dim)).type(torch.float).cuda()
+		rotation_offset = torch.ones_like(p) * rotation_offset.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+		r_values = self.conv_r(h) 
+
+		theta_mu = r_values[:,0,:,:,:] + rotation_offset
+		theta_std = r_values[:, 1,:,:,:] 
+		theta = torch.stack((theta_mu, theta_std), dim=1)
+
+		z = self.conv_z(h)
+
+
+		return attn, p, theta, z  
+'''
+
+
+
+
+
+
+
+
+
+
+
+
+
+		   
     
     
 
-    
+
