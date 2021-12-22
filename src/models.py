@@ -378,51 +378,52 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 
 
 
+class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
+    
+	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0, rot_refinement=False):
+        
+		super(InferenceNetwork_AttentionTranslation_AttentionRotation, self).__init__()
+        
+		self.activation = activation()
+		self.latent_dim = latent_dim
+		self.input_size = n
+		self.kernels_num = kernels_num
+		self.translaion_inference = translaion_inference
+		self.rotation_inference = rotation_inference
+		self.groupconv = groupconv
+		self.rot_refinement = rot_refinement
+		
+		self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
+		self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
 
-
-'''
-		x = x.view(-1, 1, 1, self.input_size, self.input_size)
-
+		self.conv_a = nn.Conv3d(self.kernels_num, 1, 1)
+		self.conv_r = nn.Conv3d(self.kernels_num, 2, 1)
+		self.conv_z = nn.Conv3d(self.kernels_num, 2*self.latent_dim, 1)
+        
+        
+	def forward(self, x, epoch):
+		x = x.view(-1, 1, self.input_size, self.input_size)
+        
 		x = self.activation(self.conv1(x))
 		h = self.activation(self.conv2(x))
+		
 
-		# calculate rotation from group conv features; attn_values for rotations at each patch; which rotation at each patch!
 		attn = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
 		a = attn.view(attn.shape[0], -1)
 
 		p = F.gumbel_softmax(a, dim=-1, tau=0.1 )
 		p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4])
 
-
-		# calculate rotation from group conv features
-		rotation_offset = torch.tensor(np.arange(0, 2*np.pi, 2*np.pi/self.output_rot_dim)).type(torch.float).cuda()
-		rotation_offset = torch.ones_like(p) * rotation_offset.unsqueeze(0).unsqueeze(2).unsqueeze(3)
-		r_values = self.conv_r(h) 
-
-		theta_mu = r_values[:,0,:,:,:] + rotation_offset
-		theta_std = r_values[:, 1,:,:,:] 
-		theta = torch.stack((theta_mu, theta_std), dim=1)
-
 		z = self.conv_z(h)
 
+		theta = self.conv_r(h)
+		if self.rot_refinement:
+			rotation_offset = torch.tensor(np.arange(0, 2*np.pi, 2*np.pi/self.groupconv)).type(torch.float).cuda()
+			rotation_offset = torch.ones_like(p) * rotation_offset.unsqueeze(0).unsqueeze(2).unsqueeze(3)
 
-		return attn, p, theta, z  
-'''
+			theta_mu = theta[:,0,:,:,:] + rotation_offset
+			theta_std = theta[:, 1,:,:,:] 
+			theta = torch.stack((theta_mu, theta_std), dim=1)
 
-
-
-
-
-
-
-
-
-
-
-
-
-		   
-    
-    
-
+		return attn, p, theta, z
 
