@@ -379,53 +379,6 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 
 
 
-class InferenceNetwork_AttentionTranslation_UnimodalRotation_GroupConv(nn.Module):
-    
-	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, translation_inference='unimodal', rotation_inference='unimodal', groupconv=0):
-        
-		super(InferenceNetwork_AttentionTranslation_UnimodalRotation_GroupConv, self).__init__()
-        
-		self.activation = activation()
-		self.latent_dim = latent_dim
-		self.input_size = n
-		self.kernels_num = kernels_num
-		self.translaion_inference = translaion_inference
-		self.rotation_inference = rotation_inference
-		self.groupconv = groupconv
-
-		self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
-		self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
-		self.conv_a = nn.Conv3d(self.kernels_num, 1, 1)
-		self.avg_pooling_layer = Reduce('b c r h w -> b c 1 h w', 'mean')
-		self.conv_r = nn.Conv2d(self.kernels_num, 2, 1)
-		self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
-        	
-
-        
-        
-	def forward(self, x, epoch):
-		x = x.view(-1, 1, self.input_size, self.input_size)
-        
-		x = self.activation(self.conv1(x))
-		h = self.activation(self.conv2(x))
-		
-		h = self.avg_pooling_layer(h).squeeze(2)		
-
-		# calculate rotation from group conv features; attn_values for rotations at each patch
-		attn = self.conv_a(h).squeeze(1) # <- 3dconv means this is (BxRxHxW)
-		a = attn.view(attn.shape[0], -1)
-		p = F.gumbel_softmax(a, dim=-1)
-		p = p.view(h.shape[0], h.shape[2], h.shape[3], h.shape[4])
-		
-		
-
-		z = self.conv_z(h)
-
-		theta = self.conv_r(h)
-
-		return attn, p, theta, z
-
-
 
 '''
 		x = x.view(-1, 1, 1, self.input_size, self.input_size)
