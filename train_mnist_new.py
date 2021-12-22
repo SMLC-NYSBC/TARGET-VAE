@@ -630,9 +630,11 @@ def main():
 		encoder = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(n*n, inf_dim, encoder_kernel_number, num_layers=encoder_num_layers, activation=activation)
 
 	elif translation_inference=='attention' and rotation_inference=='unimodal':
-		encoder = models.InferenceNetwork_AttentionTranslation_UnimodalRotation_GroupConv(n, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv)
+		encoder = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(n, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv)
 
-	elif translation_inference=='attention' and rotation_inference=='attention':
+	elif translation_inference=='attention' and (rotation_inference=='attention' or rotation_inference=='attention+refinement'):
+		rot_refinement = (rotation_inference=='attention+refinement')
+		encoder = models.InferenceNetwork_AttentionTranslation_AttentionRotation(n, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv, rot_refinement=rot_refinement)
 	
 	
 	if use_cuda:
