@@ -232,247 +232,6 @@ def eval_model(epoch, iterator, x_coord, generator_model, encoder_model, rotate=
 
 
 
-
-
-dataset = 'mnist-rotated-translated'
-
-## load the images
-if dataset == 'mnist':
-	print('# training on MNIST', file=sys.stderr)
-	mnist_train = torchvision.datasets.MNIST('data/mnist/', train=True, download=True)
-	mnist_test = torchvision.datasets.MNIST('data/mnist/', train=False, download=True)
-
-	array = np.zeros((len(mnist_train),28,28), dtype=np.uint8)
-	for i in range(len(mnist_train)):
-		array[i] = np.array(mnist_train[i][0], copy=False)
-	mnist_train = array
-
-	array = np.zeros((len(mnist_test),28,28), dtype=np.uint8)
-	for i in range(len(mnist_test)):
-		array[i] = np.array(mnist_test[i][0], copy=False)
-	mnist_test = array
-
-elif dataset == 'mnist-rotated':
-	print('# training on rotated MNIST', file=sys.stderr)
-	mnist_train = np.load('data/mnist_rotated/images_train.npy')
-	mnist_test = np.load('data/mnist_rotated/images_test.npy')
-
-else:
-	print('# training on rotated and translated MNIST', file=sys.stderr)
-	mnist_train = np.load('data/mnist_rotated_translated/images_train.npy')
-	mnist_test = np.load('data/mnist_rotated_translated/images_test.npy')
-
-
-# In[6]:
-
-
-mnist_train = torch.from_numpy(mnist_train).float()/255
-mnist_test = torch.from_numpy(mnist_test).float()/255
-
-n = m = 28
-
-
-# In[7]:
-
-
-## x coordinate array
-xgrid = np.linspace(-1, 1, m)
-ygrid = np.linspace(1, -1, n)
-x0,x1 = np.meshgrid(xgrid, ygrid)
-x_coord = np.stack([x0.ravel(), x1.ravel()], 1)
-x_coord = torch.from_numpy(x_coord).float()
-
-y_train = mnist_train.view(-1, n*m)
-y_test = mnist_test.view(-1, n*m)
-
-
-# In[8]:
-
-
-## set the device
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if use_cuda else "cpu")
-
-if use_cuda:
-	y_train = y_train.cuda()
-	y_test = y_test.cuda()
-	x_coord = x_coord.cuda()
-
-
-
-
-data_train = torch.utils.data.TensorDataset(y_train)
-data_test = torch.utils.data.TensorDataset(y_test)
-
-
-# In[11]:
-
-
-z_dim = 2
-print('# training with z-dim:', z_dim, file=sys.stderr)
-
-num_layers = 2
-hidden_dim = 500
-
-activation = 'leakyrelu'
-if activation == 'tanh':
-	activation = nn.Tanh
-elif activation == 'leakyrelu':
-	activation = nn.LeakyReLU
-
-
-# In[12]:
-
-
-vanilla = False
-_rotate = True
-_translate = True
-
-if vanilla:
-	print('# using the vanilla MLP generator architecture', file=sys.stderr)
-	generator_model = models.VanillaGenerator(n*m, z_dim, hidden_dim, num_layers=num_layers, activation=activation)
-	inf_dim = z_dim
-	rotate = False
-	translate = False
-else:
-	print('# using the spatial generator architecture', file=sys.stderr)
-	rotate = _rotate
-	translate = _translate
-	inf_dim = z_dim
-	if rotate:
-		print('# spatial-VAE with rotation inference', file=sys.stderr)
-		#inf_dim += 1
-	if translate:
-		print('# spatial-VAE with translation inference', file=sys.stderr)
-		#inf_dim += 2
-	generator_model = models.SpatialGenerator(z_dim, hidden_dim, num_layers=num_layers, activation=activation,
-								   resid=False, expand_coords=False)
-
-encoder_model = models.MNIST_AttentionNetwork_groupconv_myGroupConv_2(z_dim, activation=activation)
-
-if use_cuda:
-	generator_model.cuda()
-	encoder_model.cuda()
-
-
-'''
-path = './training_logs/2021-12-17-12-07_mnist-rotated-translated_zDim2_AttentionMaps_GroupConv/'
-encoder_model = torch.load(path + '_inference_epoch021.sav').cuda()
-
-#generator = models.VanillaGenerator(n*m, z_dim, hidden_dim, num_layers=num_layers, activation=activation)
-generator_model = torch.load(path + '_generator_epoch021.sav').cuda()
-'''
-
-
-print(encoder_model)
-
-
-num_epochs = 100
-
-digits = int(np.log10(num_epochs)) + 1
-
-# standard deviation on rotation prior
-theta_prior = np.pi/4
-
-rand_dist = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
-
-prior_rot = Normal(torch.tensor([0.0, np.pi/2, np.pi, 3*np.pi/2]).unsqueeze(1).unsqueeze(2).cuda(), torch.tensor([theta_prior]*4).unsqueeze(1).unsqueeze(2).cuda())
-
-prior_z = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
-
-# if 2/28 is the space between two pixels, then 0.1 is the area that covers 1.4 pixels
-p_t_dist = Normal(torch.tensor([0.0]).cuda(), torch.tensor([0.3]).cuda())
-
-
-
-
-
-N = len(mnist_train)
-
-params = list(generator_model.parameters()) + list(encoder_model.parameters())
-
-lr = 1e-4
-optim = torch.optim.Adam(params, lr=lr)
-minibatch_size = 100
-
-train_iterator = torch.utils.data.DataLoader(data_train, batch_size=minibatch_size,
-												 shuffle=True)
-test_iterator = torch.utils.data.DataLoader(data_test, batch_size=minibatch_size)
-
-output = sys.stdout
-print('\t'.join(['Epoch', 'Split', 'ELBO', 'Error', 'KL']), file=output)
-
-
-
-
-
-save_interval = 5
-
-# creating a folder to save the reports and models
-root = './training_logs/'
-experiment_description = '_' + dataset + '_zDim'+ str(z_dim) + '_AttentionMaps_GroupConv/'
-path_prefix = root + str(datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')) + experiment_description
-if not os.path.exists(path_prefix):
-	os.mkdir(path_prefix)
-	
-
-	
-	
-shutil.copy('mnist_spatialVAE_attentionMaps_GroupConv_10.py', path_prefix)
-shutil.copy('spatial_vae/models.py', path_prefix)
-
-
-	
-train_log = []
-for epoch in range(num_epochs):
-	#print(optim.param_groups[0]['lr'])
-	elbo_accum,gen_loss_accum,kl_loss_accum = train_epoch(train_iterator, x_coord, generator_model
-														  , encoder_model, optim, rotate=rotate
-														  , translate=translate, epoch=epoch
-														  , num_epochs=num_epochs, N=N, use_cuda=use_cuda
-														  , params=params)
-
-	line1 = '\t'.join([str(epoch+1), 'train', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
-	output.flush()
-	print(line1, file=output)
-	output.flush()
-
-	# evaluate on the test set
-	elbo_accum,gen_loss_accum,kl_loss_accum = eval_model(epoch, test_iterator, x_coord, generator_model
-														 , encoder_model, rotate=rotate\
-														 , translate=translate,use_cuda=use_cuda)
-	line2 = '\t'.join([str(epoch+1), 'test', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
-	output.flush()
-	print(line2, file=output)
-	output.flush()
-	train_log.append(line1)
-	train_log.append(line2)
-
-
-	## save the models
-	if path_prefix is not None and (epoch+1)%save_interval == 0:
-		epoch_str = str(epoch+1).zfill(digits)
-
-		path = path_prefix + '_generator_epoch{}.sav'.format(epoch_str)
-		generator_model.eval().cpu()
-		torch.save(generator_model, path)
-
-		path = path_prefix + '_inference_epoch{}.sav'.format(epoch_str)
-		encoder_model.eval().cpu()
-		torch.save(encoder_model, path)
-
-		if use_cuda:
-			generator_model.cuda()
-			encoder_model.cuda()
-
-with open(path_prefix + 'train_log.txt', 'w') as f:
-	for l in train_log:
-		f.write('%s\n' % l)
-
-
-
-
-
 def main():
 	import argparse
 
@@ -598,7 +357,7 @@ def main():
 	if args.vanilla:
 		print('# using the vanilla MLP generator architecture', file=sys.stderr)
 		generator = models.VanillaGenerator(n*m, z_dim, generator_hidden_dim, num_layers=generator_num_layers,
-											activation=activation, resid=generator_resid)
+							activation=activation, resid=generator_resid)
 		inf_dim = z_dim
 		rotate = False
 		translate = False
@@ -607,14 +366,9 @@ def main():
 		rotate = not args.no_rotate
 		translate = not args.no_translate
 		inf_dim = z_dim
-		if rotate:
-			print('# spatial-VAE with rotation inference', file=sys.stderr)
-			inf_dim += 1
-		if translate:
-			print('# spatial-VAE with translation inference', file=sys.stderr)
-			inf_dim += 2
-		generator = models.SpatialGenerator(z_dim, generator_hidden_dim, num_layers=generator_num_layers,
-											activation=activation, resid=generator_resid, expand_coords=feature_expansion)
+		
+		generator = models.SpatialGenerator(z_dim, generator_hidden_dim, num_layers=generator_num_layers, activation=activation,
+					resid=generator_resid, expand_coords=feature_expansion)
 	
 
 
@@ -635,7 +389,7 @@ def main():
 	elif translation_inference=='attention' and (rotation_inference=='attention' or rotation_inference=='attention+refinement'):
 		rot_refinement = (rotation_inference=='attention+refinement')
 		encoder = models.InferenceNetwork_AttentionTranslation_AttentionRotation(n, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv, rot_refinement=rot_refinement)
-	
+
 	
 	if use_cuda:
 		generator.cuda()
@@ -643,7 +397,7 @@ def main():
 
 	theta_prior = args.theta_prior
 
-	print('# using priors: theta={}, dx={}'.format(theta_prior, dx_scale), file=sys.stderr)
+	print('# using priors: theta={}'.format(theta_prior), file=sys.stderr)
 	print(encoder)
 
 	N = len(mnist_train)
@@ -655,8 +409,7 @@ def main():
 
 	minibatch_size = args.minibatch_size
 
-	train_iterator = torch.utils.data.DataLoader(data_train, batch_size=minibatch_size,
-												 shuffle=True)
+	train_iterator = torch.utils.data.DataLoader(data_train, batch_size=minibatch_size, shuffle=True)
 	test_iterator = torch.utils.data.DataLoader(data_test, batch_size=minibatch_size)
 	
 	output = sys.stdout
@@ -673,16 +426,14 @@ def main():
 		experiment_description += '_vanillaGenerator'
 	else:
 		experiment_description += '_spatialGenerator'
-	if generator_resid:
-		experiment_description += '_withReslayers'
-	experiment_description += ('_'+str(generator_num_layers)+'layers')
+	
 	path_prefix = os.path.join(log_root, experiment_description,'')
 	
 	if not os.path.exists(path_prefix):
 		os.mkdir(path_prefix)   
 		
 	shutil.copy('train_mnist.py', path_prefix)
-	shutil.copy('spatial_vae/models.py', path_prefix)
+	shutil.copy('src/models.py', path_prefix)
 	
    
 	save_interval = args.save_interval
@@ -691,11 +442,11 @@ def main():
 	
 	for epoch in range(num_epochs):
 
-		elbo_accum,gen_loss_accum,kl_loss_accum = train_epoch(encoder_type, train_iterator, x_coord, generator, encoder,
-															  optim, n, m, rotate=rotate, translate=translate,
-															  dx_scale=dx_scale, theta_prior=theta_prior,
-															  epoch=epoch, num_epochs=num_epochs, N=N,
-															  use_cuda=use_cuda)
+		elbo_accum,gen_loss_accum,kl_loss_accum = train_epoch(train_iterator, x_coord, generator_model
+                                                          , encoder_model, optim, translation_inference=translation_inference
+                                                          , rotation_inference=rotation_inference, epoch=epoch
+                                                          , num_epochs=num_epochs, N=N, use_cuda=use_cuda
+                                                          , params=params)
 
 		line = '\t'.join([str(epoch+1), 'train', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
 		train_log[2*epoch] = line
@@ -703,11 +454,9 @@ def main():
 		output.flush()
 
 		# evaluate on the test set
-		elbo_accum,gen_loss_accum,kl_loss_accum = eval_model(encoder_type, test_iterator, x_coord, generator,
-															 encoder, n, m, rotate=rotate, translate=translate,
-															 dx_scale=dx_scale, theta_prior=theta_prior,
-															 use_cuda=use_cuda
-															)
+		elbo_accum,gen_loss_accum,kl_loss_accum = eval_model(epoch, test_iterator, x_coord, generator_model
+                                                         , encoder_model, translation_inference=translation_inference
+                                                          , rotation_inference=rotation_inference,,use_cuda=use_cuda)
 		line = '\t'.join([str(epoch+1), 'test', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
 		train_log[(2*epoch)+1] = line
 		print(line, file=output)
@@ -731,28 +480,8 @@ def main():
 				encoder.cuda()
 
 	
-	with open(path_prefix + 'train_log.txt', 'w') as f:
-		f.write(experiment_description + '\n')
-		if args.vanilla:
-			f.write('Generator is a vanilla_generator with {} layers and {} hidden_units in each layer'.format(generator_num_layers, generator_hidden_dim))
-		else:
-			f.write('Generator is a spatial_generator with {} layers and {} hidden_units in each layer'.format(generator_num_layers, generator_hidden_dim))
-		
-		f.write('skip connections in generator: {} \n'.format(generator_resid))
-		f.write('Encoder is {} \n'.format(encoder_type))
-		
-		f.write('\t'.join(['Epoch', 'Split', 'ELBO', 'Error', 'KL']) + '\n')
-		for l in train_log:
-			f.write('%s\n' % l)
-			
-		f.write('Encoder model: \n {}'.format(encoder))
-		f.write('\nGenerator model: \n {}'.format(generator))
 
 
 if __name__ == '__main__':
 	main()
-
-
-
-
 
