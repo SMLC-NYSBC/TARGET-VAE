@@ -24,8 +24,8 @@ import shutil
 
 
 
-def eval_minibatch(epoch, x, y, generator_model, encoder_model, rotate=True, translate=True,
-				   use_cuda=False):
+def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, rotation_inference,
+				  epoch, use_cuda=False):
 	
 	b = y.size(0)
 	btw_pixels_space = (x[1, 0] - x[0, 0]).cpu().numpy()	
@@ -34,60 +34,108 @@ def eval_minibatch(epoch, x, y, generator_model, encoder_model, rotate=True, tra
 	if use_cuda:
 		y = y.cuda()
 	
-	
-	attn, probs, theta_vals, z_vals = encoder_model(y, epoch)
-	
-	probs_over_locs = torch.sum(probs, dim=1).view(probs.shape[0], -1, 1)
-	
-	
-	
+	if translation_inference == 'unimodal' and rotation_inference == 'unimodal':
+		z_mu,z_logstd = encoder_model(y)
+		z_std = torch.exp(z_logstd)
+		z_dim = z_mu.size(1)
 
-	probs = probs.view(probs.shape[0], -1).unsqueeze(2)
-	z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
-	theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
-	
-	
-	z_dim = z_vals.size(1) // 2
-	z_mu = z_vals[:,:z_dim, ]
-	z_logstd = z_vals[:, z_dim:, ]
-	z_std = torch.exp(z_logstd) 
-	
-	
-	z_mu_expected = torch.bmm(z_mu, probs)
-	z_std_expected = torch.bmm(z_std, probs)
-	
-	# draw samples from variational posterior to calculate
-	r_z = rand_dist.sample((b, z_dim)).cuda()
-	z = (z_std_expected*r_z + z_mu_expected).squeeze(2)
- 
-	if translate:
+		# draw samples from variational posterior to calculate E[p(x|z)]
+		r = Variable(x.data.new(b,z_dim).normal_())
+		z = z_std*r + z_mu
+
+		kl_div = 0
+		# z[0] is the rotation
+		theta_mu = z_mu[:,0]
+		theta_std = z_std[:,0]
+		theta_logstd = z_logstd[:,0]
+		theta = z[:,0]
+		z = z[:,1:]
+		z_mu = z_mu[:,1:]
+		z_std = z_std[:,1:]
+		z_logstd = z_logstd[:,1:]
+
+		# calculate rotation matrix
+		rot = Variable(theta.data.new(b,2,2).zero_())
+		rot[:,0,0] = torch.cos(theta)
+		rot[:,0,1] = torch.sin(theta)
+		rot[:,1,0] = -torch.sin(theta)
+		rot[:,1,1] = torch.cos(theta)
+		x = torch.bmm(x, rot) # rotate coordinates by theta
+
+		# calculate the KL divergence term
+		sigma = theta_prior
+		kl_div = -theta_logstd + np.log(sigma) + (theta_std**2 + theta_mu**2)/2/sigma**2 - 0.5
+
+		# z[0,1] are the translations
+		dx_scale = 0.1
+		dx_mu = z_mu[:,:2]
+		dx_std = z_std[:,:2]
+		dx_logstd = z_logstd[:,:2]
+		dx = z[:,:2]*dx_scale # scale dx by standard deviation
+		dx = dx.unsqueeze(1)
+		z = z[:,2:]
+		x = x + dx # translate coordinates
+
+		# reconstruct
+		y_hat = generator_model(x.contiguous(), z)
+		y_hat = y_hat.view(b, -1)
+
+		# unit normal prior over z and translation
+		z_kl = -z_logstd + 0.5*z_std**2 + 0.5*z_mu**2 - 0.5
+		kl_div = kl_div + torch.sum(z_kl, 1)
+		kl_div = kl_div.mean()
+
+
+	elif translation_inference == 'attention' and rotation_inference == 'unimodal':
+		rand_dist = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
+		prior_rot = Normal(torch.tensor([0.0]).cuda(), torch.tensor([theta_prior]).cuda())
+		prior_z = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
+
+		probs, theta_vals, z_vals = encoder_model(y)
+    
+		probs = probs.view(probs.shape[0], -1).unsqueeze(2)
+		z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
+		theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
+
+
+		z_dim = z_vals.size(1) // 2
+		z_mu = z_vals[:,:z_dim, ]
+		z_logstd = z_vals[:, z_dim:, ]
+		z_std = torch.exp(z_logstd)
+
+		z_mu_expected = torch.bmm(z_mu, probs)
+		z_std_expected = torch.bmm(z_std, probs)
+
+		# draw samples from variational posterior to calculate
+		r_z = rand_dist.sample((b, z_dim)).cuda()
+		z = (z_std_expected*r_z + z_mu_expected).squeeze(2)
+		
 		#btw_pixels_space = 0.0741
 		x_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)
 		y_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)[::-1]
 		x_0,x_1 = np.meshgrid(x_grid, y_grid)
 		x_coord_translate = np.stack([x_0.ravel(), x_1.ravel()], 1)
-		x_coord_translate = torch.from_numpy(x_coord_translate).cuda()
+		x_coord_translate = torch.from_numpy(x_coord_translate).float().cuda()
 		x_coord_translate = x_coord_translate.expand(b, x_coord_translate.size(0), x_coord_translate.size(1))
-
 		x_coord_translate = x_coord_translate.transpose(1, 2)
 
-		dx_expected = torch.bmm(x_coord_translate.type(torch.float), probs_over_locs).squeeze(2).unsqueeze(1)
+		dx_expected = torch.bmm(x_coord_translate, probs).squeeze(2).unsqueeze(1)
 		x = x - dx_expected # translate coordinates
+
 		
-	
-	kl_div = 0
-	if rotate:
 		theta_mu = theta_vals[:, 0:1, ]
 		theta_logstd = theta_vals[:, 1:2, ]
-		theta_std = torch.exp(theta_logstd) 
-		
+		theta_std = torch.exp(theta_logstd)
+
 		theta_mu_expected = torch.bmm(theta_mu, probs)
 		theta_std_expected = torch.bmm(theta_std, probs)
-		
+
+		#theta sampled from N(theta_mu, theta_std)
 		r_theta = rand_dist.sample((b, 1)).cuda()
-		theta = (theta_std_expected*r_theta + theta_mu_expected).squeeze(2).squeeze(1) 
-		
-		
+		theta = (theta_std_expected*r_theta + theta_mu_expected).squeeze(2).squeeze(1)
+
+
+
 		# calculate rotation matrix
 		rot = Variable(theta.data.new(b,2,2).zero_())
 		rot[:,0,0] = torch.cos(theta)
@@ -96,45 +144,108 @@ def eval_minibatch(epoch, x, y, generator_model, encoder_model, rotate=True, tra
 		rot[:,1,1] = torch.cos(theta)
 		x = torch.bmm(x, rot) # rotate coordinates by theta
 		
+		
+		q_z_given_t = Normal(z_mu.view(b, z_dim, attn.shape[1], attn.shape[2]), z_std.view(b, z_dim, attn.shape[1], attn.shape[2])) 
+		q_theta_given_t = Normal(theta_mu.view(b, attn.shape[1], attn.shape[2]), theta_std.view(b, attn.shape[1], attn.shape[2]))
+		q_t = F.log_softmax(attn.view(b, -1), dim=1).view(b, attn.shape[1], attn.shape[2]) # B x R x H x W
+
+
+		# uniform prior over t
+		#p_t = torch.zeros_like(q_t_r).cuda() - np.log(attn.shape[2]*attn.shape[3])
+
+		# normal prior over t
+		p_t = torch.zeros(1, 1, attn.shape[2], attn.shape[3]).cuda()
+		p_t[:, :, :, :] = p_t_dist.log_prob(torch.tensor([x_grid]).cuda()).transpose(0, 1) + p_t_dist.log_prob(torch.tensor([y_grid]).cuda())
+		p_t = p_t.expand(b, attn.shape[1], p_t.shape[2], p_t.shape[3]) 
+
+		val1 = (torch.exp(q_t)*(q_t - p_t)).view(b, -1).sum(1)  # 
+
+
+		kl_z = kl_divergence(q_z_given_t, prior_z).sum(1) 
+		kl_theta = kl_divergence(q_theta_given_t, prior_rot)
+
+		val2 = (torch.exp(q_t) * (kl_theta + kl_z)).view(b, -1).sum(1)
+
+		kl_div = val1 + val2
+		kl_div = kl_div.mean()
+
+	else:
+		rand_dist = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
+		prior_rot = Normal(torch.tensor([0.0, np.pi/2, np.pi, 3*np.pi/2]).unsqueeze(1).unsqueeze(2).cuda(), torch.tensor([theta_prior]*4).unsqueeze(1).unsqueeze(2).cuda())
+		prior_z = Normal(torch.tensor([0.0]).cuda(), torch.tensor([1.0]).cuda())
+		p_t_dist = Normal(torch.tensor([0.0]).cuda(), torch.tensor([0.1]).cuda())
+
+		attn, probs, theta_vals, z_vals = encoder_model(y, epoch)
+    
+		probs_over_locs = torch.sum(probs, dim=1).view(probs.shape[0], -1, 1)
+		probs = probs.view(probs.shape[0], -1).unsqueeze(2)
+		z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
+		theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
+
+		z_dim = z_vals.size(1) // 2
+		z_mu = z_vals[:,:z_dim, ]
+		z_logstd = z_vals[:, z_dim:, ]
+		z_std = torch.exp(z_logstd) 
+		z_mu_expected = torch.bmm(z_mu, probs)
+		z_std_expected = torch.bmm(z_std, probs)
+		# draw samples from variational posterior to calculate
+		r_z = rand_dist.sample((b, z_dim)).cuda()
+		z = (z_std_expected*r_z + z_mu_expected).squeeze(2)
+
+		#btw_pixels_space = 0.0741
+		x_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)
+		y_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)[::-1]
+		x_0,x_1 = np.meshgrid(x_grid, y_grid)
+		x_coord_translate = np.stack([x_0.ravel(), x_1.ravel()], 1)
+		x_coord_translate = torch.from_numpy(x_coord_translate).cuda()
+		x_coord_translate = x_coord_translate.expand(b, x_coord_translate.size(0), x_coord_translate.size(1))
+		x_coord_translate = x_coord_translate.transpose(1, 2)
+		dx_expected = torch.bmm(x_coord_translate.type(torch.float), probs_over_locs).squeeze(2).unsqueeze(1)
+		x = x - dx_expected # translate coordinates
+
+		theta_mu = theta_vals[:, 0:1, ]
+		theta_logstd = theta_vals[:, 1:2, ]
+		theta_std = torch.exp(theta_logstd) 
+		theta_mu_expected = torch.bmm(theta_mu, probs)
+		theta_std_expected = torch.bmm(theta_std, probs)
+		r_theta = rand_dist.sample((b, 1)).cuda()
+		theta = (theta_std_expected*r_theta + theta_mu_expected).squeeze(2).squeeze(1) 
+
+		# calculate rotation matrix
+		rot = Variable(theta.data.new(b,2,2).zero_())
+		rot[:,0,0] = torch.cos(theta)
+		rot[:,0,1] = torch.sin(theta)
+		rot[:,1,0] = -torch.sin(theta)
+		rot[:,1,1] = torch.cos(theta)
+		x = torch.bmm(x, rot) # rotate coordinates by theta
+
+
+		q_z_given_t_r = Normal(z_mu.view(b, z_dim, attn.shape[1], attn.shape[2], attn.shape[3]), z_std.view(b, z_dim, attn.shape[1], attn.shape[2], attn.shape[3])) # B x z_dim x R x HW
+		q_theta_given_t_r = Normal(theta_mu.view(b, attn.shape[1], attn.shape[2], attn.shape[3]), theta_std.view(b, attn.shape[1], attn.shape[2], attn.shape[3]))
+		q_t_r = F.log_softmax(attn.view(b, -1), dim=1).view(b, attn.shape[1], attn.shape[2], attn.shape[3]) # B x R x H x W
+
+		# uniform prior over r
+		p_r_given_t = torch.zeros_like(q_t_r).cuda() - np.log(attn.shape[1])
+
+		# uniform prior over t
+		#p_t = torch.zeros_like(q_t_r).cuda() - np.log(attn.shape[2]*attn.shape[3])
+
+		# normal prior over t
+		p_t = torch.zeros(1, 1, attn.shape[2], attn.shape[3]).cuda()
+		p_t[:, :, :, :] = p_t_dist.log_prob(torch.tensor([x_grid]).cuda()).transpose(0, 1) + p_t_dist.log_prob(torch.tensor([y_grid]).cuda())
+		p_t = p_t.expand(b, attn.shape[1], p_t.shape[2], p_t.shape[3]) 
+		val1 = (torch.exp(q_t_r)*(q_t_r - p_t - p_r_given_t)).view(b, -1).sum(1)  # 
+
+		kl_z = kl_divergence(q_z_given_t_r, prior_z).sum(1) 
+		kl_theta = kl_divergence(q_theta_given_t_r, prior_rot)
+		val2 = (torch.exp(q_t_r) * (kl_theta + kl_z)).view(b, -1).sum(1)
+
+		kl_div = val1 + val2
 	
-	
-	# reconstruct
-	y_hat = generator_model(x, z).squeeze(2)
+
+
 	size = y.size(1)
 	log_p_x_g_z = -F.binary_cross_entropy_with_logits(y_hat, y)*size
-	
-	
-	
-	q_z_given_t_r = Normal(z_mu.view(b, z_dim, attn.shape[1], attn.shape[2], attn.shape[3]), z_std.view(b, z_dim, attn.shape[1], attn.shape[2], attn.shape[3])) # B x z_dim x R x HW
-	q_theta_given_t_r = Normal(theta_mu.view(b, attn.shape[1], attn.shape[2], attn.shape[3]), theta_std.view(b, attn.shape[1], attn.shape[2], attn.shape[3]))
-	
-	q_t_r = F.log_softmax(attn.view(b, -1), dim=1).view(b, attn.shape[1], attn.shape[2], attn.shape[3]) # B x R x H x W
-	
-	# normal prior over r
-	p_r_given_t = torch.zeros_like(q_t_r).cuda() - np.log(attn.shape[1])
-	
-	
-	# uniform prior over t
-	#p_t = torch.zeros_like(q_t_r).cuda() - np.log(attn.shape[2]*attn.shape[3])
-	
-	
-	# normal prior over t
-	p_t = torch.zeros(1, 1, attn.shape[2], attn.shape[3]).cuda()
-	p_t[:, :, :, :] = p_t_dist.log_prob(torch.tensor([x_grid]).cuda()).transpose(0, 1) + p_t_dist.log_prob(torch.tensor([y_grid]).cuda())
-	p_t = p_t.expand(b, attn.shape[1], p_t.shape[2], p_t.shape[3])
-
-	
-
-	val1 = (torch.exp(q_t_r)*(q_t_r - p_t - p_r_given_t)).view(b, -1).sum(1)
-	
-	kl_z = kl_divergence(q_z_given_t_r, prior_z).sum(1) 
-	kl_theta = kl_divergence(q_theta_given_t_r, prior_rot)
-	
-	val2 = (torch.exp(q_t_r) * (kl_theta + kl_z)).view(b, -1).sum(1)
-	
-	kl_div = val1 + val2
-	kl_div = kl_div.mean() 
-
 	elbo = log_p_x_g_z - kl_div
 
 	return elbo, log_p_x_g_z, kl_div
@@ -143,8 +254,9 @@ def eval_minibatch(epoch, x, y, generator_model, encoder_model, rotate=True, tra
 
 
 
-def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, rotate=True, translate=True
+def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, translation_inference, rotation_inference
 				, epoch=1, num_epochs=1, N=1, use_cuda=False, params=None):
+
 	generator_model.train()
 	encoder_model.train()
 
@@ -158,8 +270,8 @@ def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, rotate
 		x = Variable(x_coord)
 		y = Variable(y)
 
-		elbo, log_p_x_g_z, kl_div = eval_minibatch(epoch, x, y, generator_model, encoder_model, rotate=rotate
-												   , translate=translate, use_cuda=use_cuda)
+		elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
+							rotation_inference, epoch, use_cuda=use_cuda)
 		
 		loss = -elbo
 		loss.backward()
@@ -196,8 +308,8 @@ def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, rotate
 
 
 
-def eval_model(epoch, iterator, x_coord, generator_model, encoder_model, rotate=True, translate=True
-			  , use_cuda=False):
+def eval_model(iterator, x_coord, generator_model, encoder_model, translation_inference , rotation_inference, epoch, use_cuda=False):
+
 	generator_model.eval()
 	encoder_model.eval()
 
@@ -211,8 +323,8 @@ def eval_model(epoch, iterator, x_coord, generator_model, encoder_model, rotate=
 		x = Variable(x_coord)
 		y = Variable(y)
 
-		elbo, log_p_x_g_z, kl_div = eval_minibatch(epoch, x, y, generator_model, encoder_model
-												   , rotate=rotate, translate=translate, use_cuda=use_cuda)
+		elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, 
+						translation_inference , rotation_inference, epoch, use_cuda=use_cuda)
 
 		elbo = elbo.item()
 		gen_loss = -log_p_x_g_z.item()
@@ -229,6 +341,13 @@ def eval_model(epoch, iterator, x_coord, generator_model, encoder_model, rotate=
 		kl_loss_accum += delta/c
 
 	return elbo_accum, gen_loss_accum, kl_loss_accum
+
+
+
+
+
+
+
 
 
 
@@ -454,9 +573,9 @@ def main():
 		output.flush()
 
 		# evaluate on the test set
-		elbo_accum,gen_loss_accum,kl_loss_accum = eval_model(epoch, test_iterator, x_coord, generator_model
+		elbo_accum,gen_loss_accum,kl_loss_accum = eval_model(test_iterator, x_coord, generator_model
                                                          , encoder_model, translation_inference=translation_inference
-                                                          , rotation_inference=rotation_inference,,use_cuda=use_cuda)
+                                                          , rotation_inference=rotation_inference, epoch, use_cuda=use_cuda)
 		line = '\t'.join([str(epoch+1), 'test', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
 		train_log[(2*epoch)+1] = line
 		print(line, file=output)
@@ -464,7 +583,7 @@ def main():
 
 		#print('sigma is {}'.format(generator.embed_latent.sigma))
 		## save the models
-		if path_prefix is not None and (epoch+1)%save_interval == 0 and (epoch+1) > 70:
+		if path_prefix is not None and (epoch+1)%save_interval == 0:
 			epoch_str = str(epoch+1).zfill(digits)
 
 			path = path_prefix + '_generator_epoch{}.sav'.format(epoch_str)
@@ -484,4 +603,7 @@ def main():
 
 if __name__ == '__main__':
 	main()
+
+
+
 
