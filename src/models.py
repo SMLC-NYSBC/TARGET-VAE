@@ -149,44 +149,6 @@ class SpatialGenerator(nn.Module):
         return y
 
 
-class VanillaGenerator(nn.Module):
-    def __init__(self, n, latent_dim, hidden_dim, n_out=1, num_layers=1, activation=nn.LeakyReLU
-                , softplus=False, resid=False):
-        super(VanillaGenerator, self).__init__()
-        """
-        The standard MLP structure for image generation. Decodes each pixel location as a funciton of z.
-        """
-
-        self.n_out = n_out
-        self.softplus = softplus
-
-        layers = [nn.Linear(latent_dim,hidden_dim), 
-                  activation()]
-        for _ in range(1,num_layers):
-            if resid:
-                layers.append(ResidLinear(hidden_dim, hidden_dim, activation=activation))
-            else:
-                layers.append(nn.Linear(hidden_dim,hidden_dim))
-                layers.append(activation())
-        layers.append(nn.Linear(hidden_dim, n*n_out))
-        if softplus:
-            layers.append(nn.Softplus())
-
-        self.layers = nn.Sequential(*layers)
-
-    def forward(self, x, z):
-        # x is (batch, num_coords, 2)
-        # z is (batch, latent_dim)
-
-        # ignores x, decodes each pixel conditioned on z
-
-        y = self.layers(z).view(z.size(0), -1, self.n_out)
-        if self.softplus: # only apply softplus to first output
-            y = torch.cat([F.softplus(y[:,:,:1]), y[:,:,1:]], 2)
-
-        return y
-
-
 
     
     
@@ -248,8 +210,8 @@ class GroupConv(nn.Module):
             #create the rotation matrix
             rot = torch.zeros(self.weight.shape[0], 3, 4).cuda()
             rot[:,0,0] = np.cos(theta)
-            rot[:,0,1] = np.sin(theta)
-            rot[:,1,0] = -np.sin(theta)
+            rot[:,0,1] = -np.sin(theta)
+            rot[:,1,0] = np.sin(theta)
             rot[:,1,1] = np.cos(theta)
 
 
