@@ -75,10 +75,6 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         z = z[:,2:]
         x = x + dx # translate coordinates
 
-        # reconstruct
-        y_hat = generator_model(x.contiguous(), z)
-        y_hat = y_hat.view(b, -1)
-
         # unit normal prior over z and translation
         z_kl = -z_logstd + 0.5*z_std**2 + 0.5*z_mu**2 - 0.5
         kl_div = kl_div + torch.sum(z_kl, 1)
@@ -89,9 +85,11 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         rand_dist = Normal(torch.tensor([0.0]).to(device), torch.tensor([1.0]).to(device))
         prior_rot = Normal(torch.tensor([0.0]).to(device), torch.tensor([theta_prior]).to(device))
         prior_z = Normal(torch.tensor([0.0]).to(device), torch.tensor([1.0]).to(device))
+        p_t_dist = Normal(torch.tensor([0.0]).to(device), torch.tensor([0.1]).to(device))
 
-        probs, theta_vals, z_vals = encoder_model(y)
-
+        attn, probs, theta_vals, z_vals = encoder_model(y)
+        
+        #probs returned here is over the locations since rotation_inference is unimodal
         probs = probs.view(probs.shape[0], -1).unsqueeze(2)
         z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
         theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
@@ -144,18 +142,18 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         x = torch.bmm(x, rot) # rotate coordinates by theta
 
 
-        q_z_given_t = Normal(z_mu.view(b, z_dim, attn.shape[1], attn.shape[2]), z_std.view(b, z_dim, attn.shape[1], attn.shape[2])) 
-        q_theta_given_t = Normal(theta_mu.view(b, attn.shape[1], attn.shape[2]), theta_std.view(b, attn.shape[1], attn.shape[2]))
-        q_t = F.log_softmax(attn.view(b, -1), dim=1).view(b, attn.shape[1], attn.shape[2]) # B x R x H x W
+        q_z_given_t = Normal(z_mu.view(b, z_dim, attn.shape[2], attn.shape[3]), z_std.view(b, z_dim, attn.shape[2], attn.shape[3])) 
+        q_theta_given_t = Normal(theta_mu.view(b, attn.shape[2], attn.shape[3]), theta_std.view(b, attn.shape[2], attn.shape[3]))
+        q_t = F.log_softmax(attn.view(b, -1), dim=1).view(b, attn.shape[2], attn.shape[3]) # B x R x H x W
 
 
         # uniform prior over t
         #p_t = torch.zeros_like(q_t_r).to(device) - np.log(attn.shape[2]*attn.shape[3])
 
         # normal prior over t
-        p_t = torch.zeros(1, 1, attn.shape[2], attn.shape[3]).to(device)
-        p_t[:, :, :, :] = p_t_dist.log_prob(torch.tensor([x_grid]).to(device)).transpose(0, 1) + p_t_dist.log_prob(torch.tensor([y_grid]).to(device))
-        p_t = p_t.expand(b, attn.shape[1], p_t.shape[2], p_t.shape[3]) 
+        p_t = torch.zeros(1, attn.shape[2], attn.shape[3]).to(device)
+        p_t[:, :, :] = p_t_dist.log_prob(torch.tensor([x_grid]).to(device)).transpose(0, 1) + p_t_dist.log_prob(torch.tensor([y_grid]).to(device))
+        p_t = p_t.expand(b, p_t.shape[1], p_t.shape[2]) 
 
         val1 = (torch.exp(q_t)*(q_t - p_t)).view(b, -1).sum(1)  # 
 
@@ -174,7 +172,7 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         prior_z = Normal(torch.tensor([0.0]).to(device), torch.tensor([1.0]).to(device))
         p_t_dist = Normal(torch.tensor([0.0]).to(device), torch.tensor([0.1]).to(device))
 
-        attn, probs, theta_vals, z_vals = encoder_model(y, epoch)
+        attn, probs, theta_vals, z_vals = encoder_model(y)
 
         probs_over_locs = torch.sum(probs, dim=1).view(probs.shape[0], -1, 1)
         probs = probs.view(probs.shape[0], -1).unsqueeze(2)
@@ -242,7 +240,10 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         kl_div = val1 + val2
 
 
-
+    
+    # reconstruct
+    y_hat = generator_model(x.contiguous(), z)
+    y_hat = y_hat.view(b, -1)
     size = y.size(1)
     log_p_x_g_z = -F.binary_cross_entropy_with_logits(y_hat, y)*size
     elbo = log_p_x_g_z - kl_div
@@ -495,7 +496,7 @@ def main():
         encoder_model = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(n*n, inf_dim, encoder_kernel_number, num_layers=encoder_num_layers, activation=activation)
 
     elif translation_inference=='attention' and rotation_inference=='unimodal':
-        encoder_model = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(n, z_dim, kernels_num=encode_kernel_number, activation=activation, groupconv=group_conv)
+        encoder_model = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(n, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv)
 
     elif translation_inference=='attention' and (rotation_inference=='attention' or rotation_inference=='attention+refinement'):
         rot_refinement = (rotation_inference=='attention+refinement')
@@ -531,7 +532,8 @@ def main():
     if not os.path.exists(log_root):
         os.mkdir(log_root)
     experiment_description = '_'.join([str(datetime.datetime.now().strftime('%Y-%m-%d-%H-%M'))
-                                      ,args.dataset, 'zDim', str(z_dim)])
+                                       , args.dataset, 'zDim', str(z_dim),'translation', translation_inference, 'rotation'
+                                       , rotation_inference])
     path_prefix = os.path.join(log_root, experiment_description,'')
 
     if not os.path.exists(path_prefix):
@@ -570,7 +572,7 @@ def main():
         if path_prefix is not None and (epoch+1)%save_interval == 0:
             epoch_str = str(epoch+1).zfill(digits)
 
-            path = path_prefix + '_generator_model_epoch{}.sav'.format(epoch_str)
+            path = path_prefix + '_generator_epoch{}.sav'.format(epoch_str)
             generator_model.eval().cpu()
             torch.save(generator_model, path)
 
@@ -581,13 +583,17 @@ def main():
             generator_model.to(device)
             encoder_model.to(device)
 
-
+    with open(path_prefix + 'train_log.txt', 'w') as f:
+        f.write(experiment_description + '\n')
+        
+        f.write('\t'.join(['Epoch', 'Split', 'ELBO', 'Error', 'KL']) + '\n')
+        for l in train_log:
+            f.write('%s\n' % l)
+            
+        f.write('Encoder model: \n {}'.format(encoder_model))
+        f.write('\nGenerator model: \n {}'.format(generator_model))
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
 
