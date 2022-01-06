@@ -330,7 +330,7 @@ class InferenceNetwork_UnimodalTranslation_UnimodalRotation(nn.Module):
     
 class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
     
-	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=groupconv):
+	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0):
         
 		super(InferenceNetwork_AttentionTranslation_UnimodalRotation, self).__init__()
         
@@ -338,8 +338,6 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 		self.latent_dim = latent_dim
 		self.input_size = n
 		self.kernels_num = kernels_num
-		self.translaion_inference = translaion_inference
-		self.rotation_inference = rotation_inference
 		self.groupconv = groupconv
 		
 		if self.groupconv == 0:
@@ -355,7 +353,7 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 		self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
         
         
-	def forward(self, x, epoch):
+	def forward(self, x):
 		x = x.view(-1, 1, self.input_size, self.input_size)
         
 		x = self.activation(self.conv1(x))
@@ -376,8 +374,6 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 		return attn, p, theta, z
 
 
-
-
 class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
     
 	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0, rot_refinement=False):
@@ -388,8 +384,6 @@ class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
 		self.latent_dim = latent_dim
 		self.input_size = n
 		self.kernels_num = kernels_num
-		self.translaion_inference = translaion_inference
-		self.rotation_inference = rotation_inference
 		self.groupconv = groupconv
 		self.rot_refinement = rot_refinement
 		
@@ -401,7 +395,7 @@ class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
 		self.conv_z = nn.Conv3d(self.kernels_num, 2*self.latent_dim, 1)
         
         
-	def forward(self, x, epoch):
+	def forward(self, x):
 		x = x.view(-1, 1, self.input_size, self.input_size)
         
 		x = self.activation(self.conv1(x))
