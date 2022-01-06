@@ -43,6 +43,7 @@ def load_images(path):
 
 
  
+ 
 def get_latent(x, y, encoder_model, translation_inference, rotation_inference, device):
 
     b = y.size(0)
@@ -55,6 +56,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
         with torch.no_grad():
             z_mu,z_logstd = encoder_model(y)
             z_std = torch.exp(z_logstd)
+            z_dim = z_mu.size(1)
 
             # z[0] is the rotation
             theta_mu = z_mu[:,0].unsqueeze(1)
@@ -67,22 +69,26 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
 
     elif translation_inference == 'attention' and rotation_inference == 'unimodal':
         with torch.no_grad():
-            _, probs, theta_vals, z_vals = encoder_model(y)
-
+            probs, theta_vals, z_vals = encoder_model(y)
+            
+            #getting most probable t
+            val, ind1 = probs.view(probs.shape[0], -1).max(1)
+            ind0 = torch.arange(ind1.shape[0])
+            
             #probs returned here is over the locations since rotation_inference is unimodal
             probs = probs.view(probs.shape[0], -1).unsqueeze(2)
             z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
             theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
-
 
             z_dim = z_vals.size(1) // 2
             z_mu = z_vals[:,:z_dim, ]
             z_logstd = z_vals[:, z_dim:, ]
             z_std = torch.exp(z_logstd)
 
-            z_mu_expected = torch.bmm(z_mu, probs)
-            z_std_expected = torch.bmm(z_std, probs)
-            z_content = torch.cat((z_mu_expected, z_std_expected), dim=1).squeeze(2)
+            # selecting z_values from the most probable t
+            z_mu = z_mu[ind0, :, ind1]
+            z_std = z_std[ind0, :, ind1]
+            z_content = torch.cat((z_mu, z_std), dim=1)
 
             #btw_pixels_space = 0.0741
             x_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)
@@ -94,16 +100,18 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             x_coord_translate = x_coord_translate.transpose(1, 2)
             dx = torch.bmm(x_coord_translate, probs).squeeze(2)
 
-            theta_mu = theta_vals[:, 0:1, ]
-            theta_mu = torch.bmm(theta_mu, probs).squeeze(2)
+            # selecting theta_means from the most probable t
+            theta_mu = theta_vals[ind0, 0:1, ind1]
 
 
     else:
         with torch.no_grad():
-            _, probs, theta_vals, z_vals = encoder_model(y, 100)
-
-            probs_over_locs = torch.sum(probs, dim=1).view(probs.shape[0], -1, 1)
-            probs = probs.view(probs.shape[0], -1).unsqueeze(2)
+            attn, probs, theta_vals, z_vals = encoder_model(y, 100)
+            
+            #getting most probable t_r
+            val, ind1 = probs.view(probs.shape[0], -1).max(1)
+            ind0 = torch.arange(ind1.shape[0])
+            
             z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
             theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
 
@@ -111,10 +119,14 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             z_mu = z_vals[:,:z_dim, ]
             z_logstd = z_vals[:, z_dim:, ]
             z_std = torch.exp(z_logstd) 
-            z_mu_expected = torch.bmm(z_mu, probs)
-            z_std_expected = torch.bmm(z_std, probs)
-            z_content = torch.cat((z_mu_expected, z_std_expected), dim=1).squeeze(2)
-
+            
+            # selecting z_values from the most probable t_r
+            z_mu = z_mu[ind0, :, ind1]
+            z_std = z_std[ind0, :, ind1]
+            z_content = torch.cat((z_mu, z_std), dim=1)
+              
+            probs_over_locs = torch.sum(probs, dim=1).view(probs.shape[0], -1, 1)
+            
             #btw_pixels_space = 0.0741
             x_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)
             y_grid = np.arange(-btw_pixels_space*27, btw_pixels_space*28, btw_pixels_space)[::-1]
@@ -124,9 +136,9 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             x_coord_translate = x_coord_translate.expand(b, x_coord_translate.size(0), x_coord_translate.size(1))
             x_coord_translate = x_coord_translate.transpose(1, 2)
             dx = torch.bmm(x_coord_translate.type(torch.float), probs_over_locs).squeeze(2)
-
-            theta_mu = theta_vals[:, 0:1, ]
-            theta_mu = torch.bmm(theta_mu, probs).squeeze(2)
+            
+            # selecting theta_means from the most probable t_r
+            theta_mu = theta_vals[ind0, 0:1, ind1]
 
 
     return z_content, theta_mu, dx 
