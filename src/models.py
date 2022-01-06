@@ -330,48 +330,51 @@ class InferenceNetwork_UnimodalTranslation_UnimodalRotation(nn.Module):
     
 class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
     
-	def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0):
-        
-		super(InferenceNetwork_AttentionTranslation_UnimodalRotation, self).__init__()
-        
-		self.activation = activation()
-		self.latent_dim = latent_dim
-		self.input_size = n
-		self.kernels_num = kernels_num
-		self.groupconv = groupconv
-		
-		if self.groupconv == 0:
-			self.conv1 = nn.Conv2d(1, self.kernels_num, self.input_size, padding=self.input_size-1)
-			self.conv2 = nn.Conv2d(self.kernels_num, self.kernels_num, 1)
-		else:
-			self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
-			self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
-			self.avg_pooling_layer = Reduce('b c r h w -> b c 1 h w', 'mean')
+    def __init__(self, n, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0):
 
-		self.conv_a = nn.Conv2d(self.kernels_num, 1, 1)
-		self.conv_r = nn.Conv2d(self.kernels_num, 2, 1)
-		self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
+        super(InferenceNetwork_AttentionTranslation_UnimodalRotation, self).__init__()
+
+        self.activation = activation()
+        self.latent_dim = latent_dim
+        self.input_size = n
+        self.kernels_num = kernels_num
+        self.groupconv = groupconv
+
+        if self.groupconv == 0:
+            self.conv1 = nn.Conv2d(1, self.kernels_num, self.input_size, padding=self.input_size-1)
+            self.conv2 = nn.Conv2d(self.kernels_num, self.kernels_num, 1)
+        else:
+            self.conv1 = GroupConv(1, self.kernels_num, self.input_size, padding=self.input_size-1, input_rot_dim=1, output_rot_dim=self.groupconv)
+            self.conv2 = nn.Conv3d(self.kernels_num, self.kernels_num, 1)
+            self.fc_r = nn.Linear(self.groupconv, 1)
+
+        self.conv_a = nn.Conv2d(self.kernels_num, 1, 1)
+        self.conv_r = nn.Conv2d(self.kernels_num, 2, 1)
+        self.conv_z = nn.Conv2d(self.kernels_num, 2*self.latent_dim, 1)
         
         
-	def forward(self, x):
-		x = x.view(-1, 1, self.input_size, self.input_size)
-        
-		x = self.activation(self.conv1(x))
-		h = self.activation(self.conv2(x))
-		
-		if self.groupconv > 0:
-			h = self.avg_pooling_layer(h).squeeze(2)
+    def forward(self, x):
+        x = x.view(-1, 1, self.input_size, self.input_size)
 
-		attn = self.conv_a(h)
-		a = attn.view(attn.shape[0], -1)
-		p = F.gumbel_softmax(a, dim=-1)
-		p = p.view(h.shape[0], h.shape[2], h.shape[3])
+        x = self.activation(self.conv1(x))
+        h = self.activation(self.conv2(x))
 
-		z = self.conv_z(h)
+        if self.groupconv > 0:
+            h = h.permute(0, 1, 3, 4, 2)
+            h = self.fc_r(h).squeeze(4)
 
-		theta = self.conv_r(h)
 
-		return attn, p, theta, z
+        attn = self.conv_a(h)
+        a = attn.view(attn.shape[0], -1)
+        p = F.gumbel_softmax(a, dim=-1)
+        p = p.view(h.shape[0], h.shape[2], h.shape[3])
+
+        z = self.conv_z(h)
+
+        theta = self.conv_r(h)
+
+        return attn, p, theta, z
+
 
 
 class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
