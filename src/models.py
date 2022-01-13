@@ -210,8 +210,8 @@ class GroupConv(nn.Module):
             #create the rotation matrix
             rot = torch.zeros(self.weight.shape[0], 3, 4).cuda()
             rot[:,0,0] = np.cos(theta)
-            rot[:,0,1] = -np.sin(theta)
-            rot[:,1,0] = np.sin(theta)
+            rot[:,0,1] = np.sin(theta)
+            rot[:,1,0] = -np.sin(theta)
             rot[:,1,1] = np.cos(theta)
 
 
