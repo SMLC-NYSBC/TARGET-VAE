@@ -10,11 +10,13 @@ from torch.nn.modules.utils import _pair
 from torch.nn import Parameter
 from torch.autograd import Variable
 import torch.utils.data
+from torch.distributions.normal import Normal
+from torch.distributions.uniform import Uniform
+import torch.nn.init as init
 
 import math
 import numpy as np
 
-from einops.layers.torch import Rearrange, Reduce
 
 
 class ResidLinear(nn.Module):
