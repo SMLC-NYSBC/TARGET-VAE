@@ -1,4 +1,4 @@
-# Rotation-Equivariant-Spatial-VAE
+# TARGET-VAE
 
 ## Group-Convolutional Layer
 An example of how the output of group-convolutional layer is rotation-equivariant:
