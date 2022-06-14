@@ -284,7 +284,7 @@ class InferenceNetwork_UnimodalTranslation_UnimodalRotation(nn.Module):
     
 class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
     '''
-    
+    Inference with attention only on the translation values
     '''
     def __init__(self, n, in_channels, latent_dim, kernels_num=128, activation=nn.LeakyReLU, groupconv=0):
 
@@ -343,7 +343,9 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 
 
 class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
-    
+    '''
+    Inference with attention on both the translation and rotation values (TARGET-VAE)
+    '''
     def __init__(self, n, in_channels, latent_dim, kernels_num=128, kernels_size=65, padding=16, activation=nn.LeakyReLU
                  , groupconv=0, rot_refinement=False, theta_prior=np.pi, normal_prior_over_r=True):
 
