@@ -393,7 +393,7 @@ def eval_model(iterator, x_coord, generator_model, encoder_model, translation_in
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser('Train Rotation Equivariant spatial-VAE on MNIST datasets')
+    parser = argparse.ArgumentParser('Train TARGET-VAE on dSprites dataset')
     
     parser.add_argument('--train-path', help='path to training data; or path to the whole data')
     parser.add_argument('--test-path', help='path to testing data')
