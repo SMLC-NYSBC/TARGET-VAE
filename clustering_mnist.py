@@ -157,11 +157,10 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
 
 def cluster_acc(y_true, y_pred):
     """
-    Calculate clustering accuracy. Require scikit-learn installed
-    # Arguments
+    Arguments
         y: true labels, numpy.array with shape `(n_samples,)`
         y_pred: predicted labels, numpy.array with shape `(n_samples,)`
-    # Return
+    Return
         accuracy
     """
     y_true = y_true.astype(np.int64)
@@ -198,7 +197,7 @@ def measure_correlations(path_to_transformations, rot_pred, tr_pred):
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser('Train spatial-VAE on MNIST datasets')
+    parser = argparse.ArgumentParser('Clustering mnist/mnist-N/mnist-U')
 
     parser.add_argument('--dataset', choices=['mnist', 'mnist-U', 'mnist-N'], default='mnist-U', help='which MNIST datset to train/validate on (default: mnist-U)')
     parser.add_argument('-z', '--z-dim', type=int, default=2, help='latent variable dimension (default: 2)')
