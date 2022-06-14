@@ -743,7 +743,7 @@ def main():
     print('# using priors: theta={}'.format(theta_prior), file=sys.stderr)
     
     
-    if translation_inference=='unimodal' and rotation_inference=='unimodal': #original spatial-vae from Bepler et. al 2019
+    if translation_inference=='unimodal' and rotation_inference=='unimodal': 
         inf_dim = z_dim + 3 # 1 additional dim for rotation and 2 for translation 
         encoder_model = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(m*n, inf_dim, encoder_kernel_number, num_layers=encoder_num_layers, activation=activation)
 
