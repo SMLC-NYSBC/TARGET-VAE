@@ -400,7 +400,7 @@ def eval_model(iterator, x_coord, generator_model, encoder_model, translation_in
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser('Train Rotation Equivariant spatial-VAE on MNIST datasets')
+    parser = argparse.ArgumentParser('Train TARGET_VAE on MNIST/MNIST-N/MNIST-U datasets')
     
     parser.add_argument('--dataset', choices=['mnist', 'mnist-U', 'mnist-N'], default='mnist-U', help='which MNIST datset to train/validate on (default: mnist-U)')
     
