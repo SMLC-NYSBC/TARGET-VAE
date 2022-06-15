@@ -682,14 +682,12 @@ def main():
     if use_cuda:
         y_train = y_train.cuda()
         y_test = y_test.cuda()
+        x_coord = x_coord.cuda()
         if ctf_train is not None:
             ctf_train = ctf_train.cuda()
         if ctf_test is not None:
             ctf_test = ctf_test.cuda()
-
-    if use_cuda:
-        x_coord = x_coord.cuda()
-
+        
 
     data_train = torch.utils.data.TensorDataset(y_train)
     if ctf_train is not None:
