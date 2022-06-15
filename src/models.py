@@ -267,7 +267,6 @@ class InferenceNetwork_UnimodalTranslation_UnimodalRotation(nn.Module):
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x):
-        # x is (batch,num_coords)
         z = self.layers(x)
 
         ld = self.latent_dim
@@ -315,8 +314,6 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
              
         
     def forward(self, x):
-        x = x.view(-1, 1, self.input_size, self.input_size)
-        
         x = self.activation(self.conv1(x))
 
         if self.groupconv > 0:
@@ -344,7 +341,7 @@ class InferenceNetwork_AttentionTranslation_UnimodalRotation(nn.Module):
 
 class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
     '''
-    Inference with attention on both the translation and rotation values (TARGET-VAE)
+    Inference with attention on both the translation and rotation values (inference model for TARGET-VAE)
     '''
     def __init__(self, n, in_channels, latent_dim, kernels_num=128, kernels_size=65, padding=16, activation=nn.LeakyReLU
                  , groupconv=0, rot_refinement=False, theta_prior=np.pi, normal_prior_over_r=True):
@@ -372,8 +369,6 @@ class InferenceNetwork_AttentionTranslation_AttentionRotation(nn.Module):
 
 
     def forward(self, x):
-        #x = x.view(-1, 1, self.input_size, self.input_size)
-        
         x = self.activation(self.conv1(x))
         h = self.activation(self.conv2(x)) 
 
