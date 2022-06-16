@@ -567,9 +567,6 @@ def main():
     
     print('learning-rate is {}'.format(lr))
     
-    temperature = 1.0
-    print('temperature is {}'.format(temperature))
-    
     early_stopping = EarlyStopping(patience=20, delta=1e-4, save_path=path_prefix, digits=digits)
 
     
