@@ -263,7 +263,7 @@ def main():
     tr_pred = torch.empty(len(data_test), 2)
     rot_pred = torch.empty(len(data_test), 1)
     
-    # getting predicted z, rotation, and translation for the transformed mnist_N or mnist_U datasets
+    # getting predicted z, rotation, and translation for the data
     for i in range(0,len(data_test), minibatch_size):
         y = data_test[i:i+minibatch_size]
         y = torch.stack(y, dim=0).squeeze(0).to(device)
