@@ -1,5 +1,5 @@
 # TARGET-VAE
 
-## Group-Convolutional Layer
-An example of how the output of group-convolutional layer is rotation-equivariant:
-<img src='images/groupconv.jpg'  height='75%' width='75%'>
+Source code for <a href=""> Unsupervised Object Representation Learning using Translation and Rotation Group Equivariant VAE </a>
+
+<img src="model_p8_2.pdf">
