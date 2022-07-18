@@ -24,7 +24,17 @@ For example to train TARGET-VAE with P8 groupconv and z_dim=2, on the mnist_U da
 ```
 python train_mnist.py -z 2 --dataset mnist-U --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion
 ```
-, or to train TARGET-VAE with P8 and z_dim=2, on the particle stack saved in the folder 'data/EMPIAR10025/mrcs/':
+, and to use this trained model for clustering:
 ```
-python train_particles.py --train-path data/EMPIAR10025/mrcs -z 2 --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion
+python clustering_mnist.py -z 2 --dataset mnist-U --path-to-encoder training_logs/2022-06-08-18-53_mnist-N_zDim_2_translation_attention_rotation_attention+offsets_groupconv8/inference.sav --t-inf attention --r-inf attention+offsets 
+```
+
+
+To train TARGET-VAE with P8 and z_dim=2, on the particle stack saved in the folder 'data/EMPIAR10025/mrcs/':
+```
+python train_particles.py --train-path data/EMPIAR10025/mrcs/ -z 2 --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion
+```
+, and to use the trained model for clustering:
+```
+python clustering_particles.py -z 2 --test-path data/EMPIAR10025/mrcs/ --path-to-encoder 2022-05-27-14-45_10025_zDim_2_translation_attention_rotation_attention+offsets_groupconv8/inference.sav --t-inf attention --r-inf attention+offsets
 ```
