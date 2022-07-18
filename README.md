@@ -22,5 +22,9 @@ The code in train_mnist.py, train_particles.py, train_dsprites.py, and train_gal
 
 For example to train TARGET-VAE with P8 groupconv and z_dim=2, on the mnist_U dataset (described in the paper):
 ```
-python train_mnist.py -z 2 --dataset mnist-U --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion -d 0
+python train_mnist.py -z 2 --dataset mnist-U --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion
+```
+, or to train TARGET-VAE with P8 and z_dim=2, on the particle stack saved in the folder 'data/EMPIAR10025/mrcs/':
+```
+python train_particles.py --train-path data/EMPIAR10025/mrcs -z 2 --t-inf attention --r-inf attention+offsets --groupconv 8 --fourier-expansion
 ```
