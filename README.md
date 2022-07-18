@@ -15,3 +15,9 @@ Dependencies
 <li> scikit-learn >= 1.0.2 </li>
 <li> astropy >= 5.0.4 </li>
 </ul>
+
+
+### Usage
+The code in train_mnist.py, train_particles.py, train_dsprites.py, and train_galaxy.py, train TARGET-VAE on mnist (regular, MNIST(N), MNIST(U)), particle stacks of cryo-EM, dSprites, and galaxies datasets. The scripts with clustering at the start of their names, can be used to apply the trained model for clustering on a specific dataset.
+
+For example to 
