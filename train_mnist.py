@@ -274,7 +274,8 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         else:
             theta_prior_given_r = theta_prior
         
-        p_theta_given_t_r = Normal(offsets.unsqueeze(1).unsqueeze(2).to(device), torch.tensor([theta_prior_given_r]*attn.shape[1]).unsqueeze(1).unsqueeze(2).to(device))
+        p_theta_given_t_r = Normal(offsets.unsqueeze(1).unsqueeze(2).to(device), 
+                                   torch.tensor([theta_prior_given_r]*attn.shape[1]).unsqueeze(1).unsqueeze(2).to(device))
         kl_theta = kl_divergence(q_theta_given_t_r, p_theta_given_t_r)
         
         val2 = torch.exp(q_t_r) * (kl_theta + kl_z)
@@ -402,7 +403,7 @@ def main():
 
     parser = argparse.ArgumentParser('Train TARGET_VAE on MNIST/MNIST-N/MNIST-U datasets')
     
-    parser.add_argument('--dataset', choices=['mnist', 'mnist-U', 'mnist-N'], default='mnist-U', help='which MNIST datset to train/validate on (default: mnist-U)')
+    parser.add_argument('--dataset', choices=['mnist', 'mnist-U', 'mnist-N'], default='mnist-U', help='MNIST datset to train/validate(default: mnist-U)')
     
     parser.add_argument('-z', '--z-dim', type=int, default=2, help='latent variable dimension (default: 2)')
     parser.add_argument('--t-inf', default='unimodal', choices=['unimodal', 'attention'], help='unimodal | attention')
@@ -525,7 +526,8 @@ def main():
 
 
     # defining generator_model
-    generator_model = models.SpatialGenerator(z_dim, generator_hidden_dim, num_layers=generator_num_layers, activation=activation, resid=generator_resid, fourier_expansion=fourier_expansion, sigma=fourier_sigma)
+    generator_model = models.SpatialGenerator(z_dim, generator_hidden_dim, num_layers=generator_num_layers, activation=activation
+                                              , resid=generator_resid, fourier_expansion=fourier_expansion, sigma=fourier_sigma)
 
     # defining encoder_model model
     translation_inference = args.t_inf
@@ -551,14 +553,20 @@ def main():
     
     if translation_inference=='unimodal' and rotation_inference=='unimodal': 
         inf_dim = z_dim + 3 # 1 additional dim for rotation and 2 for translation 
-        encoder_model = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(image_dim*image_dim, inf_dim, encoder_kernel_number, num_layers=encoder_num_layers, activation=activation)
+        encoder_model = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(image_dim*image_dim, inf_dim, encoder_kernel_number
+                                                                                     , num_layers=encoder_num_layers, activation=activation)
 
     elif translation_inference=='attention' and rotation_inference=='unimodal':
-        encoder_model = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number, activation=activation, groupconv=group_conv)
+        encoder_model = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number
+                                                                                      , activation=activation, groupconv=group_conv)
 
     elif translation_inference=='attention' and (rotation_inference=='attention' or rotation_inference=='attention+offsets'):
         rot_refinement = (rotation_inference=='attention+offsets')
-        encoder_model = models.InferenceNetwork_AttentionTranslation_AttentionRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number, kernels_size=encoder_kernel_size, padding=encoder_padding, activation=activation, groupconv=group_conv, rot_refinement=rot_refinement, theta_prior=theta_prior, normal_prior_over_r=normal_prior_over_r)
+        encoder_model = models.InferenceNetwork_AttentionTranslation_AttentionRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number
+                                                                                       , kernels_size=encoder_kernel_size, padding=encoder_padding
+                                                                                       , activation=activation, groupconv=group_conv
+                                                                                       , rot_refinement=rot_refinement, theta_prior=theta_prior
+                                                                                       , normal_prior_over_r=normal_prior_over_r)
 
 
     generator_model.to(device)
@@ -573,7 +581,8 @@ def main():
     lr = args.learning_rate
     optim = torch.optim.Adam(params, lr=lr)
     
-    scheduler = ReduceLROnPlateau(optim, mode='max', factor=0.5, patience=10, threshold=1e-4, threshold_mode='abs', cooldown=0, min_lr=0, eps=1e-08, verbose=True)
+    scheduler = ReduceLROnPlateau(optim, mode='max', factor=0.5, patience=10, threshold=1e-4, threshold_mode='abs', cooldown=0, min_lr=0, eps=1e-08
+                                  , verbose=True)
     
     minibatch_size = args.minibatch_size
 
