@@ -5,7 +5,7 @@ Source code for <a href=""> Unsupervised Object Representation Learning using Tr
 <img src="images/model_p8_2.gif" alt="TARGET-VAE framework">
 
 
-### Setup
+## Setup
 Dependencies
 <ul>
 <li> Python 3 </li>
@@ -17,7 +17,7 @@ Dependencies
 </ul>
 
 
-### Usage
+## Usage
 The code in train_mnist.py, train_particles.py, train_dsprites.py, and train_galaxy.py, train TARGET-VAE on mnist (regular, MNIST(N), MNIST(U)), particle stacks of cryo-EM, dSprites, and galaxies datasets. The scripts with clustering at the start of their names, can be used to apply the trained model for clustering on a specific dataset.
 
 For example to 
