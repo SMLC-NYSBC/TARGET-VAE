@@ -96,11 +96,12 @@ def eval_minibatch(x, y, ctf, generator_model, encoder_model, translation_infere
         z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
         theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
 
+        eps = 1e-6
 
         z_dim = z_vals.size(1) // 2
         z_mu = z_vals[:,:z_dim, ]
         z_logstd = z_vals[:, z_dim:, ]
-        z_std = torch.exp(z_logstd)
+        z_std = torch.exp(z_logstd) + eps
 
         z_mu_expected = torch.bmm(z_mu, attn_sampled)
         z_std_expected = torch.bmm(z_std, attn_sampled)
@@ -123,8 +124,6 @@ def eval_minibatch(x, y, ctf, generator_model, encoder_model, translation_infere
         x_translated_batch = x_translated_batch.transpose(1, 2)
         dx = torch.bmm(x_translated_batch.type(torch.float), attn_sampled).squeeze(2).unsqueeze(1)
         x = x - dx # translate coordinates
-
-        eps = 1e-6
 
         theta_mu = theta_vals[:, 0:1, ]
         theta_logstd = theta_vals[:, 1:2, ] 
