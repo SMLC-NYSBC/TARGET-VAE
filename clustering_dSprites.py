@@ -45,7 +45,15 @@ def load_images(path):
  
 
 def get_latent(x, y, encoder_model, translation_inference, rotation_inference, device):
-
+    """
+    Arguments
+        x: base coordinates of the pixels, not rotated or translated
+        y: input 
+    Return
+        z_content: rotation-translation-invariant representations
+        theta_mu: predicted rotation for the object
+        dx: prdicted translation for the object
+    """
     b = y.size(0)
     btw_pixels_space = (x[1, 0] - x[0, 0]).cpu().numpy()
     x = x.expand(b, x.size(0), x.size(1)).to(device)
@@ -158,7 +166,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
 def cluster_acc(y_true, y_pred):
     """
     Arguments
-        y: true labels, numpy.array with shape `(n_samples,)`
+        y_true: true labels, numpy.array with shape `(n_samples,)`
         y_pred: predicted labels, numpy.array with shape `(n_samples,)`
     Return
         accuracy
@@ -203,8 +211,9 @@ def main():
     
     parser.add_argument('--path-to-encoder', help='path to the saved encoder model')
 
-    parser.add_argument('--t-inf', default='unimodal', choices=['unimodal', 'attention'], help='unimodal | attention')
-    parser.add_argument('--r-inf', default='unimodal', choices=['unimodal', 'attention', 'attention+offsets'], help='unimodal | attention | attention+offsets')
+    parser.add_argument('--t-inf', default='attention', choices=['unimodal', 'attention'], help='unimodal | attention')
+    parser.add_argument('--r-inf', default='attention+offsets', choices=['unimodal', 'attention', 'attention+offsets']
+                        , help='unimodal | attention | attention+offsets')
     
     parser.add_argument('--clustering', default='agglomerative', choices=['agglomerative', 'k-means'], help='agglomerative | k-means')
     
