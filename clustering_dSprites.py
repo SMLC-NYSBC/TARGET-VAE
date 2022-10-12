@@ -44,11 +44,15 @@ def load_images(path):
 
  
 
-def get_latent(x, y, encoder_model, translation_inference, rotation_inference, device):
+def get_latent(x, y, encoder_model, t_inf, r_inf, device):
     """
     Arguments
         x: base coordinates of the pixels, not rotated or translated
         y: input 
+        encoder_model: the encoder model
+        t_inf: translation inference which can be 'unimodal' or 'attention'
+        r_inf: rotation inference which can be 'unimodal' or 'attention' or 'attention+offsets'
+        device: int
     Return
         z_content: rotation-translation-invariant representations
         theta_mu: predicted rotation for the object
@@ -59,7 +63,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
     x = x.expand(b, x.size(0), x.size(1)).to(device)
     y = y.to(device)
     
-    if translation_inference == 'unimodal' and rotation_inference == 'unimodal':
+    if t_inf == 'unimodal' and r_inf == 'unimodal':
         with torch.no_grad():
             z_mu,z_logstd = encoder_model(y)
             z_std = torch.exp(z_logstd)
@@ -74,7 +78,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             z_content = torch.cat((z_mu[:,3:], z_std[:,3:]), dim=1)
 
 
-    elif translation_inference == 'attention' and rotation_inference == 'unimodal':
+    elif t_inf == 'attention' and r_inf == 'unimodal':
         with torch.no_grad():
             attn, sampled_attn, theta_vals, z_vals = encoder_model(y)
             
@@ -115,7 +119,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             theta_mu = theta_vals[ind0, 0:1, ind1]
             
 
-    else:
+    else: # t_inf='attention' and r_inf='attention+offsets'
         with torch.no_grad():
             attn, _, _, _, _, theta_vals, z_vals = encoder_model(y)
             
@@ -169,7 +173,8 @@ def cluster_acc(y_true, y_pred):
         y_true: true labels, numpy.array with shape `(n_samples,)`
         y_pred: predicted labels, numpy.array with shape `(n_samples,)`
     Return
-        accuracy
+        mapping: mapping from the true_labels to the clusters
+        accuracy of clustering
     """
     y_true = y_true.astype(np.int64)
     assert y_pred.size == y_true.size
@@ -177,7 +182,7 @@ def cluster_acc(y_true, y_pred):
     w = np.zeros((D, D), dtype=np.int64)
     for i in range(y_pred.size):
         w[y_true[i], y_pred[i]] += 1
-    mapping = linear_sum_assignment(w.max() - w) # ind has the mapping from the true_labels to clusters
+    mapping = linear_sum_assignment(w.max() - w) 
 
     sum_ = 0
     for i in range(len(mapping[0])):
@@ -187,13 +192,23 @@ def cluster_acc(y_true, y_pred):
 
 
 
-def measure_correlations(rot_gt, tr_gt, rot_pred, tr_pred):
-    rot_corr = circcorrcoef(rot_gt, rot_pred.numpy())
-    x_corr = np.corrcoef(tr_gt[:,0], tr_pred.numpy()[:,0])[0][1]
-    y_corr = np.corrcoef(tr_gt[:,1], tr_pred.numpy()[:,1])[0][1]
+def measure_correlations(r_gt, t_gt, r_pred, t_pred):
+    """
+    Arguments
+        r_gt: ground-truth rotation angles
+        t_gt: ground-truth translation values
+        r_pred:predicted rotation angles
+        t_pred: predicted translation values
+    Return
+        r_corr: circular rotatation correlation
+        t_corr: Pearson correaltion coefficient for translations over x and y
+    """
+    r_corr = circcorrcoef(r_gt, r_pred.numpy())
+    x_corr = np.corrcoef(t_gt[:,0], t_pred.numpy()[:,0])[0][1]
+    y_corr = np.corrcoef(t_gt[:,1], t_pred.numpy()[:,1])[0][1]
     tr_corr = [x_corr, y_corr]
 
-    return rot_corr, tr_corr
+    return r_corr, t_corr
 
 
 
@@ -208,6 +223,7 @@ def main():
     parser.add_argument('--train-labels', default='./data/dsprites-dataset-master/latent_train.npy', help='path to training data; or path to the whole data')
     parser.add_argument('--test-labels', default='./data/dsprites-dataset-master/latent_test.npy' , help='path to testing data')
     parser.add_argument('-z', '--z-dim', type=int, default=2, help='latent variable dimension (default: 2)')
+    parser.add_argument('--inp-channel', type=int, default=1, help='number of the channels in the input (default: 1)')
     
     parser.add_argument('--path-to-encoder', help='path to the saved encoder model')
 
@@ -236,8 +252,8 @@ def main():
 
     labels = np.concatenate((train_labels, test_labels))
     shape_labels = labels[:, 1]
-    rot_gt = labels[:, 3:4] # ground-truth rotation values
-    tr_gt = labels[:, 4:] # ground-truth translation values
+    r_gt = labels[:, 3:4] # ground-truth rotation values
+    t_gt = labels[:, 4: ] # ground-truth translation values
 
     n,m = images.shape[1:]
     
@@ -248,8 +264,8 @@ def main():
     x_coord = np.stack([x0.ravel(), x1.ravel()], 1)
     x_coord = torch.from_numpy(x_coord).float()
     
-    in_channels = 1
-    y_test = images.view(-1, in_channels, n, m)
+    inp_channels = args.inp_channels
+    y_test = images.view(-1, inp_channels, n, m)
 
     ## set the device
     d = args.device
@@ -270,11 +286,11 @@ def main():
     print('# clustering with z-dim:', z_dim, file=sys.stderr)
 
     # defining encoder model
-    translation_inference = args.t_inf
-    rotation_inference = args.r_inf
+    t_inf = args.t_inf
+    r_inf = args.r_inf
 
-    print('# translation inference is {}'.format(translation_inference), file=sys.stderr)
-    print('# rotation inference is {}'.format(rotation_inference), file=sys.stderr)
+    print('# translation inference is {}'.format(t_inf, file=sys.stderr)
+    print('# rotation inference is {}'.format(r_inf), file=sys.stderr)
 
     path_to_encoder = args.path_to_encoder
     encoder = torch.load(path_to_encoder).to(device)
@@ -285,22 +301,22 @@ def main():
     path_prefix = '/'.join(path_to_encoder.split('/')[:-1]) 
 
     z_values = torch.empty(len(data_test), 2*z_dim)
-    tr_pred = torch.empty(len(data_test), 2)
-    rot_pred = torch.empty(len(data_test), 1)
+    t_pred = torch.empty(len(data_test), 2)
+    r_pred = torch.empty(len(data_test), 1)
     
     # getting predicted z, rotation, and translation for the data
     for i in range(0,len(data_test), minibatch_size):
         y = data_test[i:i+minibatch_size]
         y = torch.stack(y, dim=0).squeeze(0).to(device)
 
-        a, b, c = get_latent(x_coord, y, encoder, translation_inference, rotation_inference, device)
+        a, b, c = get_latent(x_coord, y, encoder, t_inf, r_inf, device)
 
         z_values[i:i+minibatch_size] = a.cpu()
         rot_pred[i:i+minibatch_size] = b.cpu()
         tr_pred[i:i+minibatch_size]  = c.cpu()
 
         
-    rot_corr, tr_corr = measure_correlations(rot_gt, tr_gt, rot_pred, tr_pred)
+    r_corr, t_corr = measure_correlations(r_gt, t_gt, r_pred, t_pred)
     
     
     if args.clustering == 'agglomerative':
@@ -360,8 +376,8 @@ def main():
     with open(path_prefix + '/results.txt', 'w') as f:
         f.write('using the encoder model from {}\n\n'.format(path_to_encoder))
         f.write('The accuracy for clustering is {} \n'.format(acc))
-        f.write('The circular correlation for the rotation is {}\n'.format(rot_corr))
-        f.write('The Pearson correlation for the x and y values in the translation is {}\n'.format(tr_corr))
+        f.write('The circular correlation for the rotation is {}\n'.format(r_corr))
+        f.write('The Pearson correlation for the x and y values in the translation is {}\n'.format(t_corr))
 
 
 
