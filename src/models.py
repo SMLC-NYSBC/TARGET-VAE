@@ -130,7 +130,7 @@ class SpatialGenerator(nn.Module):
         y = self.layers(h) # (batch*num_coords, nout)
         y = y.view(b, n, -1)
 
-        if self.softplus: # only apply softplus to first output
+        if self.softplus: 
             y = torch.cat([F.softplus(y[:,:,:1]), y[:,:,1:]], 2)
 
         return y
