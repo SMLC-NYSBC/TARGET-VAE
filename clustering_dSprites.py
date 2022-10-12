@@ -11,8 +11,6 @@ from matplotlib import colors
 from  matplotlib import cm
 import seaborn as sns
 
-from PIL import Image
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
