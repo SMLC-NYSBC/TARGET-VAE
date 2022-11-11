@@ -11,8 +11,6 @@ from matplotlib import colors
 from  matplotlib import cm
 import seaborn as sns
 
-from PIL import Image
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,14 +42,26 @@ def load_images(path):
 
  
 
-def get_latent(x, y, encoder_model, translation_inference, rotation_inference, device):
-
+def get_latent(x, y, encoder_model, t_inf, r_inf, device):
+    """
+    Arguments
+        x: base coordinates of the pixels, not rotated or translated
+        y: input 
+        encoder_model: the encoder model
+        t_inf: translation inference which can be 'unimodal' or 'attention'
+        r_inf: rotation inference which can be 'unimodal' or 'attention' or 'attention+offsets'
+        device: int
+    Return
+        z_content: rotation-translation-invariant representations
+        theta_mu: predicted rotation for the object
+        dx: prdicted translation for the object
+    """
     b = y.size(0)
     btw_pixels_space = (x[1, 0] - x[0, 0]).cpu().numpy()
     x = x.expand(b, x.size(0), x.size(1)).to(device)
     y = y.to(device)
     
-    if translation_inference == 'unimodal' and rotation_inference == 'unimodal':
+    if t_inf == 'unimodal' and r_inf == 'unimodal':
         with torch.no_grad():
             y = y.view(b, -1)
             z_mu,z_logstd = encoder_model(y)
@@ -67,9 +77,9 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
             z_content = torch.cat((z_mu[:,3:], z_std[:,3:]), dim=1)
 
 
-    elif translation_inference == 'attention' and rotation_inference == 'unimodal':
+    elif t_inf == 'attention' and r_inf == 'unimodal':
         with torch.no_grad():
-            attn, sampled_attn, theta_vals, z_vals = encoder_model(y)
+            attn, sampled_attn, theta_vals, z_vals = encoder_model(y, device)
             
             #getting most probable t
             val, ind1 = attn.view(attn.shape[0], -1).max(1)
@@ -110,7 +120,7 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
 
     else:
         with torch.no_grad():
-            attn, _, _, _, _, theta_vals, z_vals = encoder_model(y)
+            attn, _, _, _, _, theta_vals, z_vals = encoder_model(y, device)
             
             #getting most probable t_r
             val, ind1 = attn.view(attn.shape[0], -1).max(1)
@@ -157,17 +167,26 @@ def get_latent(x, y, encoder_model, translation_inference, rotation_inference, d
 
 
 
-def measure_correlations(path_to_transformations, rot_pred, tr_pred):
+def measure_correlations(path_to_transformations, r_pred, t_pred):
+    """
+    Arguments
+        path_to_transformation: path to the transformations file
+        r_pred:predicted rotation angles
+        t_pred: predicted translation values
+    Return
+        r_corr: circular rotatation correlation
+        t_corr: Pearson correaltion coefficient for translations over x and y
+    """
     test_transforms = np.load(path_to_transformations)
     rot_val = test_transforms[:, 0].reshape(test_transforms.shape[0], 1)
-    tr_val = test_transforms[:, 1:].reshape(test_transforms.shape[0], 2)
+    t_val = test_transforms[:, 1:].reshape(test_transforms.shape[0], 2)
 
-    rot_corr = circcorrcoef(rot_val, rot_pred.numpy())
-    x_corr = np.corrcoef(tr_val[:,0], tr_pred.numpy()[:,0])[0][1]
-    y_corr = np.corrcoef(tr_val[:,1], tr_pred.numpy()[:,1])[0][1]
-    tr_corr = [x_corr, y_corr]
+    r_corr = circcorrcoef(rot_val, r_pred.numpy())
+    x_corr = np.corrcoef(t_val[:,0], t_pred.numpy()[:,0])[0][1]
+    y_corr = np.corrcoef(t_val[:,1], t_pred.numpy()[:,1])[0][1]
+    t_corr = [x_corr, y_corr]
 
-    return rot_corr, tr_corr
+    return r_corr, t_corr
 
 
 
@@ -181,20 +200,22 @@ def main():
     parser.add_argument('--test-path', help='path to the whole data; or path to testing data')
     parser.add_argument('--path-to-encoder', help='path to the saved encoder model')
     
-    parser.add_argument('--path-to-transformations', help='path to a single file that contains the ground-truth rotation in the first column, and the ground-truth translation values in the second and third columns; This is required for calculating rotation and translation correlation between the predicted values and the ground-truth ones')
+    parser.add_argument('--path-to-transformations', help='path to a single file that contains the ground-truth rotation in the first column, and the ground-truth translation values for x and y, in the second and third columns (for calculating correlations)')
 
-    parser.add_argument('--t-inf', default='unimodal', choices=['unimodal', 'attention'], help='unimodal | attention')
-    parser.add_argument('--r-inf', default='unimodal', choices=['unimodal', 'attention', 'attention+offsets'], help='unimodal | attention | attention+offsets')
+    parser.add_argument('--t-inf', default='attention', choices=['unimodal', 'attention'], help='unimodal | attention (default:attention)')
+    parser.add_argument('--r-inf', default='attention+offsets', choices=['unimodal', 'attention', 'attention+offsets'], help='unimodal | attention | attention+offsets (default:attention+offsets)')
     
-    parser.add_argument('--clustering', default='agglomerative', choices=['agglomerative', 'k-means'], help='agglomerative | k-means')
+    parser.add_argument('--clustering', default='agglomerative', choices=['agglomerative', 'k-means'], help='agglomerative | k-means (default:agglomerative)')
+    parser.add_argument('--n-clusters', default=10, type=int, help='Number of clusters (default:10)')
+    
     parser.add_argument('--normalize', action='store_true', help='normalize the images before training')
-    parser.add_argument('--crop', default=0, type=int, help='size of the cropped images')
+    parser.add_argument('--crop', default=0, type=int, help='size of the cropped images (default:0)')
     
-    parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images')
+    parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images (default:0)')
     
     parser.add_argument('--activation', choices=['tanh', 'leakyrelu'], default='leakyrelu', help='activation function (default: leakyrelu)')
-    parser.add_argument('--minibatch-size', type=int, default=100, help='minibatch size (default: 100)')
-    parser.add_argument('-d', '--device', type=int, default=0, help='compute device to use')
+    parser.add_argument('--minibatch-size', type=int, default=100, help='minibatch size (default:100)')
+    parser.add_argument('-d', '--device', type=int, default=0, help='compute device to use (default:0)')
 
     args = parser.parse_args()
 
@@ -245,14 +266,15 @@ def main():
     print('# clustering with z-dim:', z_dim, file=sys.stderr)
 
     # defining encoder model
-    translation_inference = args.t_inf
-    rotation_inference = args.r_inf
+    t_inf = args.t_inf
+    r_inf = args.r_inf
 
-    print('# translation inference is {}'.format(translation_inference), file=sys.stderr)
-    print('# rotation inference is {}'.format(rotation_inference), file=sys.stderr)
+    print('# translation inference is {}'.format(t_inf), file=sys.stderr)
+    print('# rotation inference is {}'.format(r_inf), file=sys.stderr)
 
     path_to_encoder = args.path_to_encoder
-    encoder = torch.load(path_to_encoder).to(device)
+    encoder = torch.load(path_to_encoder)
+    encoder = encoder.to(device)
 
     minibatch_size = args.minibatch_size
 
@@ -268,27 +290,27 @@ def main():
         y = data_test[i:i+minibatch_size]
         y = torch.stack(y, dim=0).squeeze(0).to(device)
 
-        a, b, c = get_latent(x_coord, y, encoder, translation_inference, rotation_inference, device)
+        a, b, c = get_latent(x_coord, y, encoder, t_inf, r_inf, device)
 
         z_values[i:i+minibatch_size] = a.cpu()
         rot_pred[i:i+minibatch_size] = b.cpu()
         tr_pred[i:i+minibatch_size]  = c.cpu()
 
-    
+    n_clusters = args.n_clusters
     if args.clustering == 'agglomerative':
         # AgglomerativeClustering
-        ac = AgglomerativeClustering(n_clusters=10, linkage='ward', compute_full_tree=True)
+        ac = AgglomerativeClustering(n_clusters=n_clusters, linkage='ward', compute_full_tree=True)
         cluster = ac.fit_predict(z_values.detach().cpu())
     elif args.clustering == 'k-means':
         # k-means clustering
-        km = KMeans(10, n_init=100).fit(z_values.detach().cpu())
+        km = KMeans(n_clusters, n_init=100).fit(z_values.detach().cpu())
         cluster = km.predict(z_values.detach().cpu())
 
     if args.path_to_transformations:
         rot_corr, tr_corr = measure_correlations(args.path_to_transformations, rot_pred, tr_pred)
     
     
-    '''
+    
     # saving tsne figure
     print('# saving tsne figure ... ', file=sys.stderr)
     tsne = TSNE(2, learning_rate=200.0, init='random').fit_transform(z_values.detach())
@@ -312,10 +334,11 @@ def main():
     cb.set_ticklabels(labels)
 
     plt.savefig(path_prefix + "/tsne.jpg")
-    '''
+    
     
     # saving histogram of predicted rotation values
     print('# saving chart of predicted rotation values ... ', file=sys.stderr)
+    plt.figure(figsize=(10, 10))
     ax = plt.hist(rot_pred.detach().cpu().numpy())
     plt.xlabel('predicted rotation angles')
     plt.ylabel('samples')
@@ -323,11 +346,13 @@ def main():
 
     # saving histogram of predicted translation values
     print('# saving chart of predicted translation values ... ', file=sys.stderr)
+    plt.figure(figsize=(10, 10))
     plt.hist(tr_pred[:, 0].detach().cpu().numpy())
     plt.xlabel('predicted translation values for x')
     plt.ylabel('samples')
     plt.savefig(path_prefix + "/predicted_translation_x_vals.jpg")
     
+    plt.figure(figsize=(10, 10))
     plt.hist(tr_pred[:, 1].detach().cpu().numpy())
     plt.xlabel('predicted translation values for y')
     plt.ylabel('samples')
