@@ -53,3 +53,4 @@ def ctf_filter(ctf_params, n, m, scale=1):
         ctf[i] = -np.fft.fftshift(np.fft.ifft2(c)).real
 
     return ctf
+
