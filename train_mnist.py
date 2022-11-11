@@ -1,10 +1,7 @@
 from __future__ import print_function, division
 
 import numpy as np
-import pandas as pd
 import sys
-
-from PIL import Image
 
 import torch
 import torch.nn as nn
@@ -26,7 +23,7 @@ import shutil
 
 
 
-def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, rotation_inference, epoch, device
+def eval_minibatch(x, y, generator_model, encoder_model, t_inf, r_inf, epoch, device
                   , theta_prior, groupconv, image_dim):
 
     b = y.size(0)
@@ -35,7 +32,7 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
 
     y = y.to(device)
 
-    if translation_inference == 'unimodal' and rotation_inference == 'unimodal':
+    if t_inf == 'unimodal' and r_inf == 'unimodal':
         y = y.view(b, -1)
         
         z_mu,z_logstd = encoder_model(y)
@@ -87,12 +84,12 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
         kl_div = kl_div.mean()
 
 
-    elif translation_inference == 'attention' and rotation_inference == 'unimodal':
+    elif t_inf == 'attention' and r_inf == 'unimodal':
         rand_dist = Normal(torch.tensor([0.0]).to(device), torch.tensor([1.0]).to(device))
         
-        attn, attn_sampled, theta_vals, z_vals = encoder_model(y)
+        attn, attn_sampled, theta_vals, z_vals = encoder_model(y, device)
         
-        #attn_sampled returned here is over the locations since rotation_inference is unimodal
+        #attn_sampled returned here is over the locations since r_inf is unimodal
         attn_sampled = attn_sampled.view(attn_sampled.shape[0], -1).unsqueeze(2)
         z_vals = z_vals.view(z_vals.shape[0], z_vals.shape[1], -1)
         theta_vals = theta_vals.view(theta_vals.shape[0], theta_vals.shape[1], -1)
@@ -190,7 +187,7 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
     else:
         rand_dist = Normal(torch.tensor([0.0]).to(device), torch.tensor([1.0]).to(device))
         
-        attn, q_t_r, p_r, attn_sampled, offsets, theta_vals, z_vals = encoder_model(y)
+        attn, q_t_r, p_r, attn_sampled, offsets, theta_vals, z_vals = encoder_model(y, device)
 
         attn_sampled_over_locs = torch.sum(attn_sampled, dim=1).view(attn_sampled.shape[0], -1, 1)
         attn_sampled = attn_sampled.view(attn_sampled.shape[0], -1).unsqueeze(2)
@@ -300,7 +297,7 @@ def eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
 
 
 
-def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, translation_inference, rotation_inference
+def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, t_inf, r_inf
                 , epoch, num_epochs, N, device, params, theta_prior, groupconv, image_dim):
 
     generator_model.train()
@@ -316,8 +313,8 @@ def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, transl
         x = Variable(x_coord)
         y = Variable(y)
 
-        elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, translation_inference, 
-                            rotation_inference, epoch, device, theta_prior, groupconv, image_dim)
+        elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, t_inf, 
+                            r_inf, epoch, device, theta_prior, groupconv, image_dim)
 
         
         loss = -elbo
@@ -352,7 +349,7 @@ def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, transl
 
 
 
-def eval_model(iterator, x_coord, generator_model, encoder_model, translation_inference , rotation_inference, epoch
+def eval_model(iterator, x_coord, generator_model, encoder_model, t_inf , r_inf, epoch
                , device, theta_prior, groupconv, image_dim):
 
     generator_model.eval()
@@ -369,8 +366,8 @@ def eval_model(iterator, x_coord, generator_model, encoder_model, translation_in
             x = Variable(x_coord)
             y = Variable(y)
 
-            elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, translation_inference
-                                                       , rotation_inference, epoch, device, theta_prior
+            elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, generator_model, encoder_model, t_inf
+                                                       , r_inf, epoch, device, theta_prior
                                                        , groupconv,image_dim)
 
             elbo = elbo.item()
@@ -406,35 +403,33 @@ def main():
     parser.add_argument('--dataset', choices=['mnist', 'mnist-U', 'mnist-N'], default='mnist-U', help='MNIST datset to train/validate(default: mnist-U)')
     
     parser.add_argument('-z', '--z-dim', type=int, default=2, help='latent variable dimension (default: 2)')
-    parser.add_argument('--t-inf', default='unimodal', choices=['unimodal', 'attention'], help='unimodal | attention')
+    parser.add_argument('--t-inf', default='attention', choices=['unimodal', 'attention'], help='unimodal | attention (default: attention)')
     
-    parser.add_argument('--r-inf', default='unimodal', choices=['unimodal', 'attention', 'attention+offsets'], help='unimodal | attention | attention+offsets')
+    parser.add_argument('--r-inf', default='attention+offsets', choices=['unimodal', 'attention', 'attention+offsets'], help='unimodal | attention | attention+offsets (default: attention+offsets)')
     
-    parser.add_argument('--groupconv', type=int, default=0, choices=[0, 4, 8, 16], help='0 | 4 | 8 | 16')
-    parser.add_argument('--encoder-num-layers', type=int, default=2, help='number of hidden layers in original spatial-VAE inference model')
+    parser.add_argument('--groupconv', type=int, default=8, choices=[0, 4, 8, 16], help='0 | 4 | 8 | 16 (default:8)')
+    parser.add_argument('--encoder-num-layers', type=int, default=2, help='number of hidden layers in the inference model when the translation and rotation inference are unimodal (default:2)')
     parser.add_argument('--encoder-kernel-number', type=int, default=128, help='number of kernels in each layer of the encoder (default: 128)')
     parser.add_argument('--encoder-kernel-size', type=int, default=28, help='size of kernels in the first layer of the encoder (default: 28)')
-    parser.add_argument('--encoder-padding', type=int, default=8, help='amount of the padding for the encoder (default: 16)')
+    parser.add_argument('--encoder-padding', type=int, default=8, help='amount of the padding for the encoder (default: 8)')
     
-    parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images')
-    parser.add_argument('--image-dim', type=int, default=50, help='input image of the shape image_dim x image_dim')
-    parser.add_argument('--fourier-expansion', action='store_true', help='using random fourier feature expansion in generator!')
-    parser.add_argument('--fourier-sigma', type=float, default=0.01, help='sigma value for random fourier feature expansion (default:0.01)')
+    parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images (default:1)')
+    parser.add_argument('--image-dim', type=int, default=50, help='input image of the shape image_dim x image_dim (default:50)')
+    parser.add_argument('--fourier-expansion', action='store_true', help='using random fourier feature expansion in generator')
 
-
-    parser.add_argument('--generator-hidden-dim', type=int, default=512, help='dimension of hidden layers (default: 500)')
+    parser.add_argument('--generator-hidden-dim', type=int, default=512, help='dimension of hidden layers (default: 512)')
     parser.add_argument('--generator-num-layers', type=int, default=2, help='number of hidden layers (default: 2)')
     parser.add_argument('--generator-resid-layers', action="store_true", help='using skip connections in generator')
     parser.add_argument('--activation', choices=['tanh', 'leakyrelu'], default='leakyrelu', help='activation function (default: leakyrelu)')
 
-    parser.add_argument('-l', '--learning-rate', type=float, default=2e-4, help='learning rate (default: 0.001)')
+    parser.add_argument('-l', '--learning-rate', type=float, default=2e-4, help='learning rate (default: 2e-4)')
     parser.add_argument('--minibatch-size', type=int, default=100, help='minibatch size (default: 100)')
 
-    parser.add_argument('--log-root', default='./training_logs', help='path prefix to save models (optional)')
-    parser.add_argument('--save-interval', default=20, type=int, help='save frequency in epochs (default: 10)')
-    parser.add_argument('--num-epochs', type=int, default=500, help='number of training epochs (default: 100)')
+    parser.add_argument('--log-root', default='./training_logs', help='path prefix to save models (default:./training_logs)')
+    parser.add_argument('--save-interval', default=20, type=int, help='save frequency in epochs (default: 20)')
+    parser.add_argument('--num-epochs', type=int, default=500, help='number of training epochs (default: 500)')
 
-    parser.add_argument('-d', '--device', type=int, default=0, help='compute device to use')
+    parser.add_argument('-d', '--device', type=int, default=0, help='compute device to use (default:0)')
 
     args = parser.parse_args()
     num_epochs = args.num_epochs
@@ -486,13 +481,6 @@ def main():
     in_channels = args.in_channels
     y_train = mnist_train.view(-1, in_channels, image_dim, image_dim)
     y_test = mnist_test.view(-1, in_channels, image_dim, image_dim)
-    
-
-    fourier_expansion = args.fourier_expansion
-    fourier_sigma = args.fourier_sigma
-    if fourier_expansion:
-        print('# Using random Fourier feature expansion', file=sys.stderr)
-
 
     ## set the device
     d = args.device
@@ -504,7 +492,6 @@ def main():
     else:
         device = torch.device("cpu")
 
-
     y_train = y_train.to(device)
     y_test = y_test.to(device)
     x_coord = x_coord.to(device)
@@ -512,56 +499,66 @@ def main():
     data_train = torch.utils.data.TensorDataset(y_train)
     data_test = torch.utils.data.TensorDataset(y_test)
 
+    
     z_dim = args.z_dim
     print('# training with z-dim:', z_dim, file=sys.stderr)
 
     generator_num_layers = args.generator_num_layers
     generator_hidden_dim = args.generator_hidden_dim
     generator_resid = args.generator_resid_layers
+    
+    fourier_expansion = args.fourier_expansion
+    fourier_sigma = max(2.0 / (image_dim - 1), 2.0 / (image_dim - 1)) # setting sigma value of the fourier expansion to the pixel size in the image
+    if fourier_expansion:
+        print('# Using random Fourier feature expansion', file=sys.stderr)
+        print('# The sigma value for the Fourier feature expansion is {}'.format(fourier_sigma), file=sys.stderr)
 
     if args.activation == 'tanh':
         activation = nn.Tanh
     elif args.activation == 'leakyrelu':
         activation = nn.LeakyReLU
 
-
     # defining generator_model
     generator_model = models.SpatialGenerator(z_dim, generator_hidden_dim, num_layers=generator_num_layers, activation=activation
                                               , resid=generator_resid, fourier_expansion=fourier_expansion, sigma=fourier_sigma)
 
     # defining encoder_model model
-    translation_inference = args.t_inf
-    rotation_inference = args.r_inf
+    t_inf = args.t_inf
+    r_inf = args.r_inf
     encoder_num_layers = args.encoder_num_layers
     encoder_kernel_number = args.encoder_kernel_number
     encoder_kernel_size = args.encoder_kernel_size
     encoder_padding = args.encoder_padding
     group_conv = args.groupconv
 
-    print('# translation inference is {}'.format(translation_inference), file=sys.stderr)
-    print('# rotation inference is {}'.format(rotation_inference), file=sys.stderr)
+    print('# translation inference is {}'.format(t_inf), file=sys.stderr)
+    print('# rotation inference is {}'.format(r_inf), file=sys.stderr)
     
     
-    if args.dataset == 'mnist-rotated-translated-UniformRot-50px' or args.dataset == 'mnist-rotated-translated-UniformRot-28px':
-        theta_prior = np.pi
-        normal_prior_over_r = False
-    else:
+    if args.dataset == 'mnist-N':
         theta_prior = np.pi/4 #std for prior on theta
         normal_prior_over_r = True
-    print('# using priors: theta={}'.format(theta_prior), file=sys.stderr)
+    else:
+        theta_prior = np.pi 
+        normal_prior_over_r = False
     
+    if normal_prior_over_r:
+        print('# Gaussian prior over theta with mean=0 and std={}'.format(theta_prior), file=sys.stderr)
+    else:
+        print('# Uniform prior over theta', file=sys.stderr)
+        
     
-    if translation_inference=='unimodal' and rotation_inference=='unimodal': 
+    if t_inf=='unimodal' and r_inf=='unimodal': 
         inf_dim = z_dim + 3 # 1 additional dim for rotation and 2 for translation 
         encoder_model = models.InferenceNetwork_UnimodalTranslation_UnimodalRotation(image_dim*image_dim, inf_dim, encoder_kernel_number
                                                                                      , num_layers=encoder_num_layers, activation=activation)
 
-    elif translation_inference=='attention' and rotation_inference=='unimodal':
+    elif t_inf=='attention' and r_inf=='unimodal':
         encoder_model = models.InferenceNetwork_AttentionTranslation_UnimodalRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number
                                                                                       , activation=activation, groupconv=group_conv)
 
-    elif translation_inference=='attention' and (rotation_inference=='attention' or rotation_inference=='attention+offsets'):
-        rot_refinement = (rotation_inference=='attention+offsets')
+    elif t_inf=='attention' and (r_inf=='attention' or r_inf=='attention+offsets'):
+        rot_refinement = (r_inf=='attention+offsets')
         encoder_model = models.InferenceNetwork_AttentionTranslation_AttentionRotation(image_dim, in_channels, z_dim, kernels_num=encoder_kernel_number
                                                                                        , kernels_size=encoder_kernel_size, padding=encoder_padding
                                                                                        , activation=activation, groupconv=group_conv
@@ -581,7 +578,7 @@ def main():
     lr = args.learning_rate
     optim = torch.optim.Adam(params, lr=lr)
     
-    scheduler = ReduceLROnPlateau(optim, mode='max', factor=0.5, patience=10, threshold=1e-4, threshold_mode='abs', cooldown=0, min_lr=0, eps=1e-08
+    scheduler = ReduceLROnPlateau(optim, mode='max', factor=0.5, patience=9, threshold=1e-4, threshold_mode='abs', cooldown=0, min_lr=0, eps=1e-08
                                   , verbose=True)
     
     minibatch_size = args.minibatch_size
@@ -598,8 +595,8 @@ def main():
     if not os.path.exists(log_root):
         os.mkdir(log_root)
     experiment_description = '_'.join([str(datetime.datetime.now().strftime('%Y-%m-%d-%H-%M'))
-                                       , args.dataset, 'zDim', str(z_dim),'translation', translation_inference, 'rotation'
-                                       , rotation_inference])
+                                       , args.dataset, 'zDim', str(z_dim),'translation', t_inf, 'rotation'
+                                       , r_inf])
     if group_conv > 0:
         experiment_description = experiment_description + '_groupconv' + str(group_conv)
         
@@ -616,80 +613,82 @@ def main():
     
     early_stopping = EarlyStopping(patience=20, delta=1e-4, save_path=path_prefix, digits=digits)
     
-    for epoch in range(num_epochs):
+    with open(path_prefix + 'train_log.txt', 'w', 1) as log_file:
+        print(experiment_description + '\n', file=log_file)
+        print('\n\nargs:', file=log_file)
+        print(str(args), file=log_file)
+        print('\nEncoder model: \n {}'.format(encoder_model), file=log_file)
+        print('\nGenerator model: \n {}'.format(generator_model), file=log_file)
         
-        elbo_accum, gen_loss_accum, kl_loss_accum = train_epoch(train_iterator, x_coord, generator_model, encoder_model, optim
-                                                              , translation_inference=translation_inference
-                                                              , rotation_inference=rotation_inference, epoch=epoch
-                                                              , num_epochs=num_epochs, N=N, device=device, params=params
-                                                              , theta_prior=theta_prior, groupconv=group_conv
-                                                              , image_dim=image_dim)
+        print('\n\n', file=log_file)
+        print('\t'.join(['Epoch', 'Split', 'ELBO', 'Error', 'KL']) + '\n', file=log_file)
+        
+        for epoch in range(num_epochs):
 
-        line = '\t'.join([str(epoch+1), 'train', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
-        train_log[3*epoch] = line
-        print(line, file=output)
-        
+            elbo_accum, gen_loss_accum, kl_loss_accum = train_epoch(train_iterator, x_coord, generator_model, encoder_model, optim
+                                                                  , t_inf=t_inf
+                                                                  , r_inf=r_inf, epoch=epoch
+                                                                  , num_epochs=num_epochs, N=N, device=device, params=params
+                                                                  , theta_prior=theta_prior, groupconv=group_conv
+                                                                  , image_dim=image_dim)
 
-        # evaluate on the test set
-        elbo_accum, gen_loss_accum, kl_loss_accum = eval_model(test_iterator, x_coord, generator_model, encoder_model
-                                                             , translation_inference=translation_inference
-                                                             , rotation_inference=rotation_inference, epoch=epoch
-                                                             , device=device, theta_prior=theta_prior, groupconv=group_conv
-                                                             , image_dim=image_dim)
-        
-        
-        
-        line = '\t'.join([str(epoch+1), 'test', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
-        train_log[(3*epoch)+1] = line
-        print(line, file=output)
-        
-        
-        
-        # checking for early stopping
-        line = early_stopping(elbo_accum, encoder_model, generator_model, epoch+1)
-        train_log[(3*epoch)+2] = line
-        print(line, file=output)
-        print('\n', file=output)
-        output.flush()
-        if early_stopping.early_stop:
-            print("*** Early stopping ***")
-            break
-        
-        generator_model.to(device)
-        encoder_model.to(device)
-        
-        scheduler.step(elbo_accum)
-        
-        ## save the models
-        if (epoch+1)%save_interval == 0:
-            epoch_str = str(epoch+1).zfill(digits)
+            line = '\t'.join([str(epoch+1), 'train', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
+            train_log[3*epoch] = line
+            print(line, file=output)
+            print(line, file=log_file)
 
-            path = path_prefix + 'generator_epoch{}.sav'.format(epoch_str)
-            generator_model.eval().cpu()
-            torch.save(generator_model, path)
+            # evaluate on the test set
+            elbo_accum, gen_loss_accum, kl_loss_accum = eval_model(test_iterator, x_coord, generator_model, encoder_model
+                                                                 , t_inf=t_inf
+                                                                 , r_inf=r_inf, epoch=epoch
+                                                                 , device=device, theta_prior=theta_prior, groupconv=group_conv
+                                                                 , image_dim=image_dim)
 
-            path = path_prefix + 'inference_epoch{}.sav'.format(epoch_str)
-            encoder_model.eval().cpu()
-            torch.save(encoder_model, path)
+
+            line = '\t'.join([str(epoch+1), 'test', str(elbo_accum), str(gen_loss_accum), str(kl_loss_accum)])
+            train_log[(3*epoch)+1] = line
+            print(line, file=output)
+            print(line, file=log_file)
+
+
+            # checking for early stopping
+            line = early_stopping(elbo_accum, encoder_model, generator_model, epoch+1)
+            train_log[(3*epoch)+2] = line
+            print(line, file=output)
+            print('\n', file=output)
+            print(line, file=log_file)
+            print('\n', file=log_file)
+            
+            if early_stopping.early_stop:
+                print("*** Early stopping ***")
+                break
 
             generator_model.to(device)
             encoder_model.to(device)
+
+            scheduler.step(elbo_accum)
+
+            ## save the models
+            if (epoch+1)%save_interval == 0:
+                epoch_str = str(epoch+1).zfill(digits)
+
+                path = path_prefix + 'generator_epoch{}.sav'.format(epoch_str)
+                generator_model.eval().cpu()
+                torch.save(generator_model, path)
+
+                path = path_prefix + 'inference_epoch{}.sav'.format(epoch_str)
+                encoder_model.eval().cpu()
+                torch.save(encoder_model, path)
+
+                generator_model.to(device)
+                encoder_model.to(device)
         
-    with open(path_prefix + 'train_log.txt', 'w') as f:
-        f.write(experiment_description + '\n')
-        f.write('\n\nargs:')
-        f.write(str(args))
-        f.write('\n\n')
-        
-        f.write('\t'.join(['Epoch', 'Split', 'ELBO', 'Error', 'KL']) + '\n')
-        for i in range(3*(epoch+1)):
-            if i > 0 and (i%3 == 0):
-                f.write('\n')
-            f.write(train_log[i] + '\n')
+
+
+
             
             
-        f.write('Encoder model: \n {}'.format(encoder_model))
-        f.write('\nGenerator model: \n {}'.format(generator_model))
+        
 
 
 if __name__ == '__main__':
