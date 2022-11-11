@@ -217,4 +217,3 @@ def write(f, array, header=None, extended_header=b'', ax=1, ay=1, az=1, alpha=0,
     f.write(array.tobytes())
 
 
-
