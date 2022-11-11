@@ -59,3 +59,4 @@ def normalize(stack, radius=None):
 
     return normed
 
+
