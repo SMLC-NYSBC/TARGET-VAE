@@ -1,6 +1,6 @@
 # TARGET-VAE
 
-Source code for <a href=""> Unsupervised Object Representation Learning using Translation and Rotation Group Equivariant VAE </a>
+Source code for <a href="https://arxiv.org/abs/2210.12918"> Unsupervised Object Representation Learning using Translation and Rotation Group Equivariant VAE </a>
 
 <img src="images/model_p8_2.gif" alt="TARGET-VAE framework">
 
