@@ -63,6 +63,8 @@ def get_latent(x, y, encoder_model, t_inf, r_inf, device):
     
     if t_inf == 'unimodal' and r_inf == 'unimodal':
         with torch.no_grad():
+            y = y.view(b, -1)
+            
             z_mu,z_logstd = encoder_model(y)
             z_std = torch.exp(z_logstd)
             z_dim = z_mu.size(1)
@@ -78,7 +80,7 @@ def get_latent(x, y, encoder_model, t_inf, r_inf, device):
 
     elif t_inf == 'attention' and r_inf == 'unimodal':
         with torch.no_grad():
-            attn, sampled_attn, theta_vals, z_vals = encoder_model(y)
+            attn, sampled_attn, theta_vals, z_vals = encoder_model(y, device)
             
             #getting most probable t
             val, ind1 = attn.view(attn.shape[0], -1).max(1)
@@ -119,7 +121,7 @@ def get_latent(x, y, encoder_model, t_inf, r_inf, device):
 
     else: # t_inf='attention' and r_inf='attention+offsets'
         with torch.no_grad():
-            attn, _, _, _, _, theta_vals, z_vals = encoder_model(y)
+            attn, _, _, _, _, theta_vals, z_vals = encoder_model(y, device)
             
             #getting most probable t_r
             val, ind1 = attn.view(attn.shape[0], -1).max(1)
@@ -168,8 +170,8 @@ def get_latent(x, y, encoder_model, t_inf, r_inf, device):
 def cluster_acc(y_true, y_pred):
     """
     Arguments
-        y_true: true labels, numpy.array with shape `(n_samples,)`
-        y_pred: predicted labels, numpy.array with shape `(n_samples,)`
+        y_true: true labels, numpy.array with shape (n_samples,)
+        y_pred: predicted labels, numpy.array with shape (n_samples,)
     Return
         mapping: mapping from the true_labels to the clusters
         accuracy of clustering
@@ -216,10 +218,12 @@ def main():
 
     parser = argparse.ArgumentParser('Clustering dSprites')
 
-    parser.add_argument('--train-path', default='data/dsprites-dataset-master/imgs_train.npy', help='path to training data; or path to the whole data')
-    parser.add_argument('--test-path', default='data/dsprites-dataset-master/imgs_test.npy', help='path to testing data')
-    parser.add_argument('--train-labels', default='./data/dsprites-dataset-master/latent_train.npy', help='path to training data; or path to the whole data')
-    parser.add_argument('--test-labels', default='./data/dsprites-dataset-master/latent_test.npy' , help='path to testing data')
+    parser.add_argument('--train-path', default='data/dsprites-dataset-master/imgs_train.npy', help='path to training data; or path to the whole data (default:data/dsprites-dataset-master/imgs_train.npy)')
+    parser.add_argument('--test-path', default='data/dsprites-dataset-master/imgs_test.npy', help='path to testing data (default:data/dsprites-dataset-master/imgs_test.npy)')
+    
+    parser.add_argument('--train-labels', default='./data/dsprites-dataset-master/latent_train.npy', help='path to training data; or path to the whole data (default:./data/dsprites-dataset-master/latent_train.npy)')
+    parser.add_argument('--test-labels', default='./data/dsprites-dataset-master/latent_test.npy' , help='path to testing data (default:./data/dsprites-dataset-master/latent_test.npy)')
+    
     parser.add_argument('-z', '--z-dim', type=int, default=2, help='latent variable dimension (default: 2)')
     parser.add_argument('--inp-channel', type=int, default=1, help='number of the channels in the input (default: 1)')
     
@@ -230,6 +234,7 @@ def main():
                         , help='unimodal | attention | attention+offsets')
     
     parser.add_argument('--clustering', default='agglomerative', choices=['agglomerative', 'k-means'], help='agglomerative | k-means')
+    parser.add_argument('--n-clusters', default=10, type=int, help='Number of clusters (default:10)')
     
     parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images')
     parser.add_argument('--activation', choices=['tanh', 'leakyrelu'], default='leakyrelu', help='activation function (default: leakyrelu)')
@@ -241,9 +246,11 @@ def main():
 
     ## load the images
     images_train = np.load(args.train_path)
-    images_test = np.load(args.test_path)  
+    images_test = np.load(args.test_path) 
     images = np.concatenate((images_train, images_test))
     images = torch.from_numpy(images).float()
+    print('**')
+    print(images.shape)
     
     train_labels = np.load(args.train_labels)
     test_labels = np.load(args.test_labels)
@@ -262,8 +269,8 @@ def main():
     x_coord = np.stack([x0.ravel(), x1.ravel()], 1)
     x_coord = torch.from_numpy(x_coord).float()
     
-    inp_channels = args.inp_channels
-    y_test = images.view(-1, inp_channels, n, m)
+    in_channels = args.in_channels
+    y_test = images.view(-1, in_channels, n, m)
 
     ## set the device
     d = args.device
@@ -287,7 +294,7 @@ def main():
     t_inf = args.t_inf
     r_inf = args.r_inf
 
-    print('# translation inference is {}'.format(t_inf, file=sys.stderr)
+    print('# translation inference is {}'.format(t_inf), file=sys.stderr)
     print('# rotation inference is {}'.format(r_inf), file=sys.stderr)
 
     path_to_encoder = args.path_to_encoder
@@ -306,24 +313,22 @@ def main():
     for i in range(0,len(data_test), minibatch_size):
         y = data_test[i:i+minibatch_size]
         y = torch.stack(y, dim=0).squeeze(0).to(device)
-
         a, b, c = get_latent(x_coord, y, encoder, t_inf, r_inf, device)
 
         z_values[i:i+minibatch_size] = a.cpu()
-        rot_pred[i:i+minibatch_size] = b.cpu()
-        tr_pred[i:i+minibatch_size]  = c.cpu()
+        r_pred[i:i+minibatch_size] = b.cpu()
+        t_pred[i:i+minibatch_size]  = c.cpu()
 
-        
     r_corr, t_corr = measure_correlations(r_gt, t_gt, r_pred, t_pred)
     
-    
+    n_clusters = args.n_clusters
     if args.clustering == 'agglomerative':
         # AgglomerativeClustering
-        ac = AgglomerativeClustering(n_clusters=10, linkage='ward', compute_full_tree=True)
+        ac = AgglomerativeClustering(n_clusters=n_clusters, linkage='ward', compute_full_tree=True)
         cluster = ac.fit_predict(z_values.detach().cpu())
     elif args.clustering == 'k-means':
         # k-means clustering
-        km = KMeans(10, n_init=100).fit(z_values.detach().cpu())
+        km = KMeans(n_clusters=n_clusters, n_init=100).fit(z_values.detach().cpu())
         cluster = km.predict(z_values.detach().cpu())
 
     mapping, acc = cluster_acc(y_labels.cpu().numpy(), cluster)
@@ -360,6 +365,7 @@ def main():
     
     # saving confusion matrix as a figure
     print('# saving confusion matrix ... ', file=sys.stderr)
+    plt.figure(figsize=(10, 10))
     cm = confusion_matrix(y_labels, cluster)
     sns.set()
     ax = sns.heatmap(cm[:, np.array(mapping[1])], annot=True, fmt="d", cmap="Blues", xticklabels=np.arange(10))
