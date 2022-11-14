@@ -16,7 +16,6 @@ Dependencies
 <li> astropy >= 5.0.4 </li>
 </ul>
 
-
 ## Usage
 The code in train_mnist.py, train_particles.py, train_dsprites.py, and train_galaxy.py, train TARGET-VAE on mnist (regular, MNIST(N), MNIST(U)), particle stacks of cryo-EM, dSprites, and galaxies datasets. The scripts with clustering at the start of their names, can be used to apply the trained model for clustering on a specific dataset.
 
@@ -38,3 +37,5 @@ python train_particles.py --train-path data/EMPIAR10025/mrcs/ -z 2 --t-inf atten
 ```
 python clustering_particles.py -z 2 --test-path data/EMPIAR10025/mrcs/ --path-to-encoder 2022-05-27-14-45_10025_zDim_2_translation_attention_rotation_attention+offsets_groupconv8/inference.sav --t-inf attention --r-inf attention+offsets
 ```
+## License
+This source code is provided under the <a href="https://github.com/SMLC-NYSBC/TARGET-VAE/blob/main/LICENSE">MIT License</a>
