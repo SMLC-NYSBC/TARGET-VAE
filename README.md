@@ -9,7 +9,7 @@ Translation and Rotation Group Equivariant Encoder
 <img src="images/Encoder1.gif" alt="Encoder of TARGET-VAE">
 <br>
 Spatially equivariant generator
-<img src="images/generator.gif" alt="Generator of TARGET-VAE">
+<img src="images/Generator.gif" alt="Generator of TARGET-VAE">
 <br> 
 
 
