@@ -10,8 +10,9 @@ Translation and Rotation Group Equivariant Encoder
 <br><br>
 Spatially equivariant generator
 <img src="images/Generator.gif" alt="Generator of TARGET-VAE">
-<br> 
-
+<br> <br><br>
+TARGET-VAE identifies protein heterogeneity on the cryo-EM particle-stack from EMPIAR-10025 dataset.
+<img src="images/EMPIAR_10025.gif" alt="protein heterogeneity identified by TARGET-VAE">
 
 ## Setup
 Dependencies
