@@ -1,8 +1,16 @@
 # TARGET-VAE
 
 Source code for <a href="https://arxiv.org/abs/2210.12918"> Unsupervised Object Representation Learning using Translation and Rotation Group Equivariant VAE </a>
-
+<br>
+Overall Framework
 <img src="images/model_p8_2.gif" alt="TARGET-VAE framework">
+<br>
+Translation and Rotation Group Equivariant Encoder
+<img src="images/Encoder1.gif" alt="Encoder of TARGET-VAE">
+<br>
+Spatially equivariant generator
+<img src="images/generator.gif" alt="Generator of TARGET-VAE">
+<br> 
 
 
 ## Setup
