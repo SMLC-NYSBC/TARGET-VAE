@@ -356,102 +356,49 @@ def train_epoch(iterator, x_coord, generator_model, encoder_model, optim, t_inf,
     gen_loss_accum = 0
     kl_loss_accum = 0
     elbo_accum = 0
-    ideal_batch_size = 100
     
-    if batch_size < ideal_batch_size:
-        counter = 0
-        iterations = ideal_batch_size // batch_size
-        elbo =0 
-        log_p_x_g_z = 0
-        kl_div = 0
-        for mb in iterator:
-            if len(mb) > 1:
-                y,ctf = mb
-            else:
-                y = mb[0]
-                ctf = None
-            
-            b = y.size(0)
-            x = Variable(x_coord)
-            y = Variable(y)
-        
-            l1, l2, l3 = eval_minibatch(x, y, ctf, generator_model, encoder_model, t_inf, r_inf
-                                        , epoch, device, theta_prior, groupconv, padding, mask_radius)
-            (-l1*(1/iterations)).backward()
-            log_p_x_g_z += l2.item()
-            kl_div += l3.item()
-            elbo += l1.item()
-            
-            counter += 1
-            if counter == iterations:
-                optim.step()
-                optim.zero_grad()
-
-                elbo = elbo / iterations
-                gen_loss = -log_p_x_g_z / iterations
-                kl_loss = kl_div / iterations
-
-                c += (b*iterations)
-                delta = (b*iterations)*(gen_loss - gen_loss_accum)
-                gen_loss_accum += delta/c
-
-                delta = (b*iterations)*(elbo - elbo_accum)
-                elbo_accum += delta/c
-
-                delta = (b*iterations)*(kl_loss - kl_loss_accum)
-                kl_loss_accum += delta/c
-
-                template = '# [{}/{}] training {:.1%}, ELBO={:.5f}, Error={:.5f}, KL={:.5f}'
-                line = template.format(epoch+1, num_epochs, c/N, elbo_accum, gen_loss_accum
-                                      , kl_loss_accum)
-                print(line, end='\r', file=sys.stderr)
                 
-                elbo = 0
-                log_p_x_g_z = 0
-                kl_div = 0
-                counter = 0
-                
-    else:
-        for mb in iterator:
-            if len(mb) > 1:
-                y,ctf = mb
-            else:
-                y = mb[0]
-                ctf = None
-                
-            b = y.size(0)
-            x = Variable(x_coord)
-            y = Variable(y)
-            
-            elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, ctf, generator_model, encoder_model, t_inf
-                                                       , r_inf, epoch, device, theta_prior
-                                                       , groupconv, padding, mask_radius)
+    
+    for mb in iterator:
+        if len(mb) > 1:
+            y,ctf = mb
+        else:
+            y = mb[0]
+            ctf = None
 
-            loss = -elbo
-            loss.backward()
+        b = y.size(0)
+        x = Variable(x_coord)
+        y = Variable(y)
 
-            #torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
-            optim.step()
-            optim.zero_grad()
+        elbo, log_p_x_g_z, kl_div = eval_minibatch(x, y, ctf, generator_model, encoder_model, t_inf
+                                                   , r_inf, epoch, device, theta_prior
+                                                   , groupconv, padding, mask_radius)
 
-            elbo = elbo.item()
-            gen_loss = -log_p_x_g_z.item()
-            kl_loss = kl_div.item()
+        loss = -elbo
+        loss.backward()
 
-            c += b
-            delta = b*(gen_loss - gen_loss_accum)
-            gen_loss_accum += delta/c
+        #torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+        optim.step()
+        optim.zero_grad()
 
-            delta = b*(elbo - elbo_accum)
-            elbo_accum += delta/c
+        elbo = elbo.item()
+        gen_loss = -log_p_x_g_z.item()
+        kl_loss = kl_div.item()
 
-            delta = b*(kl_loss - kl_loss_accum)
-            kl_loss_accum += delta/c
+        c += b
+        delta = b*(gen_loss - gen_loss_accum)
+        gen_loss_accum += delta/c
 
-            template = '# [{}/{}] training {:.1%}, ELBO={:.5f}, Error={:.5f}, KL={:.5f}'
-            line = template.format(epoch+1, num_epochs, c/N, elbo_accum, gen_loss_accum
-                                  , kl_loss_accum)
-            print(line, end='\r', file=sys.stderr)
+        delta = b*(elbo - elbo_accum)
+        elbo_accum += delta/c
+
+        delta = b*(kl_loss - kl_loss_accum)
+        kl_loss_accum += delta/c
+
+        template = '# [{}/{}] training {:.1%}, ELBO={:.5f}, Error={:.5f}, KL={:.5f}'
+        line = template.format(epoch+1, num_epochs, c/N, elbo_accum, gen_loss_accum
+                              , kl_loss_accum)
+        print(line, end='\r', file=sys.stderr)
 
     print(' '*150, end='\r', file=sys.stderr)
     return elbo_accum, gen_loss_accum, kl_loss_accum
