@@ -27,8 +27,8 @@ Dependencies
 
 ## Datasets
 The rotated and translated mnist datasets can be downloaded from these links:<br>
-<a href="https://drive.google.com/file/d/13fjRPTLSdI-tB7b4wDlrOIvb2WtJH10O/view?usp=share_link"> MNIST(N) </a> <br>
-<a href="https://drive.google.com/file/d/1zK-iXU8MrBSOqgnHfzIMtaC_Dni9YT6k/view?usp=share_link"> MNIST(U) </a> <br>
+<a href="https://drive.google.com/file/d/13fjRPTLSdI-tB7b4wDlrOIvb2WtJH10O/view?usp=share_link" download> MNIST(N) </a> <br>
+<a href="https://drive.google.com/file/d/1zK-iXU8MrBSOqgnHfzIMtaC_Dni9YT6k/view?usp=share_link" download> MNIST(U) </a> <br>
 
 
 ## Usage
