@@ -25,6 +25,12 @@ Dependencies
 <li> astropy >= 5.0.4 </li>
 </ul>
 
+## Datasets
+The rotated and translated mnist datasets can be downloaded from these links:<br>
+<a href="https://drive.google.com/file/d/13fjRPTLSdI-tB7b4wDlrOIvb2WtJH10O/view?usp=share_link"> MNIST(N) </a> <br>
+<a href="https://drive.google.com/file/d/1zK-iXU8MrBSOqgnHfzIMtaC_Dni9YT6k/view?usp=share_link"> MNIST(U) </a> <br>
+
+
 ## Usage
 The code in train_mnist.py, train_particles.py, train_dsprites.py, and train_galaxy.py, train TARGET-VAE on mnist (regular, MNIST(N), MNIST(U)), particle stacks of cryo-EM, dSprites, and galaxies datasets. The scripts with clustering at the start of their names, can be used to apply the trained model for clustering on a specific dataset.
 
