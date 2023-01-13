@@ -249,8 +249,6 @@ def main():
     images_test = np.load(args.test_path) 
     images = np.concatenate((images_train, images_test))
     images = torch.from_numpy(images).float()
-    print('**')
-    print(images.shape)
     
     train_labels = np.load(args.train_labels)
     test_labels = np.load(args.test_labels)
