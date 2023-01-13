@@ -233,7 +233,7 @@ def main():
     parser.add_argument('--r-inf', default='attention+offsets', choices=['unimodal', 'attention', 'attention+offsets']
                         , help='unimodal | attention | attention+offsets')
     
-    parser.add_argument('--clustering', default='agglomerative', choices=['agglomerative', 'k-means'], help='agglomerative | k-means')
+    parser.add_argument('--clustering', default='k-means', choices=['agglomerative', 'k-means'], help='agglomerative | k-means')
     parser.add_argument('--n-clusters', default=10, type=int, help='Number of clusters (default:10)')
     
     parser.add_argument('--in-channels', type=int, default=1, help='number of channels in the images')
