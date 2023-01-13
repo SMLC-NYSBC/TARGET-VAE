@@ -31,7 +31,7 @@ class ResidLinear(nn.Module):
 
     
 class RandomFourierEmbedding2d(nn.Module):
-    def __init__(self, in_dim, embedding_dim, sigma=0.01, learnable=False):
+    def __init__(self, in_dim, embedding_dim, sigma=0.01):
         super(RandomFourierEmbedding2d, self).__init__()
 
         self.in_dim = in_dim
@@ -42,13 +42,8 @@ class RandomFourierEmbedding2d(nn.Module):
         w = torch.randn(embedding_dim, in_dim) #/ self.sigma  shape of weights: (out_features, in_features)
         b = torch.rand(embedding_dim)*2*np.pi
 
-        if learnable:
-            self.weight = nn.Parameter(w)
-            self.bias = nn.Parameter(b)
-            
-        else:
-            self.register_buffer('weight', w)
-            self.register_buffer('bias', b)
+        self.register_buffer('weight', w)
+        self.register_buffer('bias', b)
 
         print('# sigma value is {}'.format(self.sigma))
         
@@ -77,7 +72,7 @@ class SpatialGenerator(nn.Module):
         in_dim = 2
         if fourier_expansion:
             embedding_dim = 1024
-            self.embed_latent = RandomFourierEmbedding2d(in_dim, embedding_dim, sigma, learnable=True)
+            self.embed_latent = RandomFourierEmbedding2d(in_dim, embedding_dim, sigma)
             in_dim = embedding_dim
             
 
